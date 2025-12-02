@@ -3,7 +3,7 @@ from enum import Enum
 import tiktoken
 import re
 from typing import Any, Optional, Union, Collection, AbstractSet, Literal, List
-from langchain.text_splitter import TextSplitter
+from langchain_text_splitters import TextSplitter
 import random
 import string
 from itertools import chain
