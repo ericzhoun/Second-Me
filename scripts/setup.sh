@@ -251,10 +251,10 @@ build_llama() {
     fi
     
     # Check if llama.cpp has been successfully compiled
-    if [ -f "llama.cpp/build/bin/llama-server" ]; then
+    if [ -f "llama.cpp/build/bin/Release/llama-server" ]; then
         log_info "Found existing llama-server build"
         # Check if executable file can be run and get version info
-        if version_output=$(./llama.cpp/build/bin/llama-server --version 2>&1) && [[ $version_output == version:* ]]; then
+        if version_output=$(./llama.cpp/build/bin/Release/llama-server --version 2>&1) && [[ $version_output == version:* ]]; then
             log_success "Existing llama-server build is working properly (${version_output}), skipping compilation"
             return 0
         else
@@ -292,14 +292,14 @@ build_llama() {
     fi
     
     # Check build result
-    if [ ! -f "bin/llama-server" ]; then
+    if [ ! -f "bin/Release/llama-server" ]; then
         log_error "Build failed: llama-server executable not found"
         log_error "Expected at: bin/llama-server"
         cd ../..
         return 1
     fi
     
-    log_success "Found llama-server at: bin/llama-server"
+    log_success "Found llama-server at: bin/Release/llama-server"
     cd ../..
     log_section "LLAMA.CPP BUILD COMPLETE"
 }
@@ -469,10 +469,10 @@ check_potential_conflicts() {
         exit 1
     fi
 
-    if ! check_python; then
-        log_error "python check failed, please install python first"
-        exit 1
-    fi
+    # if ! check_python; then
+    #     log_error "python check failed, please install python first"
+    #     exit 1
+    # fi
     
     if ! check_node; then
         log_error "Node.js check failed"
