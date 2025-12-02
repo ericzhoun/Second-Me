@@ -4,17 +4,70 @@ from lpm_kernel.file_data.memory_service import StorageService
 from lpm_kernel.configs.config import Config
 from lpm_kernel.common.logging import logger
 from lpm_kernel.file_data.document_service import DocumentService
+from lpm_kernel.common.repository.database_session import DatabaseSession
+from lpm_kernel.models.memory import Memory
+from sqlalchemy import select
 
 memories_bp = Blueprint("memories", __name__)
 storage_service = StorageService(Config.from_env())
 
 # Allowed file formats
-ALLOWED_EXTENSIONS = {"txt", "pdf", "md"}
+ALLOWED_EXTENSIONS = {
+    "txt",
+    "pdf",
+    "md",
+    "png",
+    "jpg",
+    "jpeg",
+    "gif",
+    "webp",
+    "bmp",
+    "tiff",
+}
 
 
 def allowed_file(filename):
     """Check if the file has an allowed format"""
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+@memories_bp.route("/api/memories/list", methods=["GET"])
+def list_memories():
+    """
+    List all memories
+    Optional query param: source (e.g., 'obsidian') to filter by metadata source
+    """
+    try:
+        logger.info("Starting to list memories")
+        source_filter = request.args.get('source')
+
+        db = DatabaseSession()
+        with db._session_factory() as session:
+            query = select(Memory)
+            # Apply basic filtering if source is provided.
+            # Note: filtering JSON in a DB-agnostic way via SQLAlchemy can be complex.
+            # For simplicity and compatibility, we'll fetch and filter in Python if needed,
+            # or try to use basic string matching if appropriate, but Python filtering
+            # is safer for JSON structure consistency across DBs (SQLite/PG/etc).
+
+            result = session.execute(query)
+            memories = result.scalars().all()
+
+            data = []
+            for memory in memories:
+                if source_filter:
+                    meta = memory.meta_data or {}
+                    # Handle if meta_data is stored as string in some legacy cases or distinct DB behavior
+                    if isinstance(meta, dict) and meta.get('source') == source_filter:
+                        data.append(memory.to_dict())
+                else:
+                    data.append(memory.to_dict())
+
+        logger.info(f"Listed {len(data)} memories")
+        return APIResponse.success(data=data, message="Memories listed successfully")
+    except Exception as e:
+        logger.error(f"Error listing memories: {str(e)}", exc_info=True)
+        return APIResponse.error(message=f"Internal server error: {str(e)}", code=500)
 
 
 @memories_bp.route("/api/memories/file", methods=["POST"])
