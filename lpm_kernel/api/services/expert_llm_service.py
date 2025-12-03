@@ -3,7 +3,7 @@ Expert LLM service for handling expert model interactions
 """
 import logging
 from lpm_kernel.api.services.user_llm_config_service import UserLLMConfigService
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 from openai import OpenAI
 from lpm_kernel.configs.config import Config
 from lpm_kernel.common.gemini_client import GeminiClient
