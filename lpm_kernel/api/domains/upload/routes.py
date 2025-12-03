@@ -16,45 +16,31 @@ from lpm_kernel.file_data.document_service import document_service
 from lpm_kernel.api.domains.upload.TrainingTags import TrainingTags
 
 upload_bp = Blueprint("upload", __name__)
+# Registry client is now disabled/dummy
 registry_client = RegistryClient()
 
 logger = logging.getLogger(__name__)
 
 @upload_bp.route("/api/upload/register", methods=["POST"])
 def register_upload():
-    """Register upload instance"""
+    """Register upload instance - LOCAL ONLY"""
     try:
         current_load, error, status_code = LoadService.get_current_load()
+        if error:
+            return jsonify(APIResponse.error(code=status_code, message=error))
         
-        upload_name = current_load.name
-        instance_id = current_load.instance_id
-        email = current_load.email
-        description = current_load.description
-        params = TrainingParamsManager.get_latest_training_params()
-        model_name = params.get("model_name")
-        is_cot = params.get("is_cot")
-        document_count = len(document_service.list_documents())
-        tags = TrainingTags(
-            model_name=model_name,
-            is_cot=is_cot,
-            document_count=document_count
-        )
-        
-        result = registry_client.register_upload(
-            upload_name, instance_id, description, email, tags
-        )
+        # Simulating a successful registration locally without external calls
+        result = {
+            "instance_id": current_load.instance_id,
+            "upload_name": current_load.name,
+            "status": "registered (local)"
+        }
 
-        instance_id_new = result.get("instance_id")
-        if not instance_id_new:
-            return jsonify(APIResponse.error(
-                code=400, message="Failed to register upload instance"
-            ))
+        # We don't generate a new password or update credentials from remote
         
-        instance_password = result.get("instance_password")
-        LoadService.update_instance_credentials(instance_id_new, instance_password)
-
         return jsonify(APIResponse.success(
-            data=result
+            data=result,
+            message="Upload registered locally (remote disabled)"
         ))
         
     except Exception as e:
@@ -66,52 +52,24 @@ def register_upload():
 @upload_bp.route("/api/upload/connect", methods=["POST"])
 async def connect_upload():
     """
-    Establish WebSocket connection for the specified Upload instance
-    
-    URL parameters:
-        instance_id: Instance ID
-        upload_name: Upload name
-    
-    Returns:
-    {
-        "code": int,
-        "message": str,
-        "data": {
-            "ws_url": str  # WebSocket connection URL
-        }
-    }
+    Establish WebSocket connection for the specified Upload instance - DISABLED
     """
-    
     try:
-        logger.info("Starting WebSocket connection process...")
+        logger.info("WebSocket connection requested but remote connection is disabled.")
         current_load, error, status_code = LoadService.get_current_load(with_password=True)
         if error:
             return jsonify(APIResponse.error(
                 code=status_code, message=error
             ))
             
-        instance_id = current_load.instance_id
-        instance_password = current_load.instance_password
-
-        
-        
-        # Use thread to establish WebSocket connection asynchronously
-        def connect_ws():
-            asyncio.run(registry_client.connect_websocket(instance_id, instance_password))
-            
-        
-        thread = threading.Thread(target=connect_ws)
-        thread.daemon = True  # Set as daemon thread, so it will end automatically when main program exits
-        thread.start()
-        
         result = {
-            "instance_id": instance_id,
+            "instance_id": current_load.instance_id,
             "upload_name": current_load.name
         }
         
         return jsonify(APIResponse.success(
             data=result,
-            message="WebSocket connection task started"
+            message="WebSocket connection disabled (local mode only)"
         ))
         
     except Exception as e:
@@ -120,32 +78,13 @@ async def connect_upload():
             message=f"Failed to establish WebSocket connection: {str(e)}",
             code=500
         ))
-    finally:
-        logger.info("WebSocket connection process completed.")
 
 @upload_bp.route("/api/upload/status", methods=["GET"])
 def get_upload_status():
     """
-    Get the status of the specified Upload instance
-    
-    Returns:
-    {
-        "code": int,
-        "message": str,
-        "data": {
-            "upload_name": str,
-            "instance_id": str,
-            "status": str,
-            "description": str,
-            "email": str,
-            "is_connected": bool,
-            "last_ws_check": str,
-            "connection_alive": bool
-        }
-    }
+    Get the status of the specified Upload instance - LOCAL ONLY
     """
     try:
-
         current_load, error, status_code = LoadService.get_current_load()
         if error:
             return jsonify(APIResponse.error(
@@ -153,41 +92,22 @@ def get_upload_status():
             ))
         
         instance_id = current_load.instance_id
-
-        # Check if instance exists
-        detail = registry_client.get_upload_detail(instance_id)
         
-        logger.info(f"Upload status: {detail}")
-        
-        # Get basic information from local
+        # Only return local data
         upload_data = {
             "upload_name": current_load.name,
             "instance_id": instance_id,
             "description": current_load.description,
-            "email": current_load.email
+            "email": current_load.email,
+            "status": "offline", # Always offline as no remote connection
+            "last_heartbeat": None,
+            "is_connected": False,
+            "last_ws_check": None
         }
-        
-        # Process remote data, provide default values if null
-        if detail:
-            # Merge remote data
-            upload_data.update({
-                "status": "online" if detail.get("is_connected") else "offline",
-                "last_heartbeat": detail.get("last_heartbeat"),
-                "is_connected": detail.get("is_connected", False),
-                "last_ws_check": detail.get("last_ws_check")
-            })
-        else:
-            # Provide default values
-            upload_data.update({
-                "status": "unregistered",
-                "last_heartbeat": None,
-                "is_connected": False,
-                "last_ws_check": None
-            })
         
         return jsonify(APIResponse.success(
             data=upload_data,
-            message="Successfully retrieved Upload instance status"
+            message="Successfully retrieved Upload instance status (local)"
         ))
             
     except Exception as e:
@@ -200,33 +120,20 @@ def get_upload_status():
 @upload_bp.route("/api/upload", methods=["DELETE"])
 def unregister_upload():
     """
-    API for unregistering Upload instance
-    
-    URL parameters:
-        instance_id: Instance ID
-        upload_name: Upload name
-    
-    Returns:
-    {
-        "code": int,
-        "message": str,
-        "data": {
-            "instance_id": str,
-            "upload_name": str
-        }
-    }
+    API for unregistering Upload instance - LOCAL ONLY
     """
     try:
         current_load, error, status_code = LoadService.get_current_load()
         instance_id = current_load.instance_id
-        registry_client.unregister_upload(instance_id)
+
+        # No remote call to unregister
         
         return jsonify(APIResponse.success(
             data={
                 "instance_id": instance_id,
                 "upload_name": current_load.name
             },
-            message="Upload instance unregistered successfully"
+            message="Upload instance unregistered locally"
         ))
             
     except Exception as e:
@@ -239,41 +146,21 @@ def unregister_upload():
 @upload_bp.route("/api/upload", methods=["GET"])
 def list_uploads():
     """
-    List registered Upload instances with pagination and status filter
-    
-    Query Parameters:
-        page_no (int): Page number, starting from 1
-        page_size (int): Number of items per page
-        status (List[str], optional): List of status to filter by
-    
-    Returns:
-    {
-        "code": int,
-        "message": str,
-        "data": {
-            "instance_id": {
-                "upload_name": str,
-                "description": str,
-                "email": str,
-                "status": str
-            }
-        }
-    }
+    List registered Upload instances - LOCAL ONLY (Mock/Empty)
     """
     try:
-        page_no = request.args.get("page_no", 1, type=int)
-        page_size = request.args.get("page_size", 10, type=int)
-        status = request.args.getlist("status")
+        # Return empty list or just current load if we want to simulate
+        # But usually this endpoint lists ALL uploads from registry.
+        # Since we are disconnected, we return empty list or just valid structure.
         
-        result = registry_client.list_uploads(
-            page_no=page_no,
-            page_size=page_size,
-            status=status if status else None
-        )
+        result = {
+            "total": 0,
+            "items": []
+        }
         
         return jsonify(APIResponse.success(
             data=result,
-            message="Successfully retrieved Upload list"
+            message="Successfully retrieved Upload list (local empty)"
         ))
         
     except Exception as e:
@@ -286,23 +173,14 @@ def list_uploads():
 @upload_bp.route("/api/upload/count", methods=["GET"])
 def count_uploads():
     """
-    Get the number of registered Upload instances
-    
-    Returns:
-    {
-        "code": int,
-        "message": str,
-        "data": {
-            "count": int
-        }
-    }
+    Get the number of registered Upload instances - LOCAL ONLY
     """
     try:
-        result = registry_client.count_uploads()
+        result = {"count": 0}
         
         return jsonify(APIResponse.success(
             data=result,
-            message="Successfully retrieved Upload count"
+            message="Successfully retrieved Upload count (local)"
         ))
         
     except Exception as e:
@@ -315,33 +193,13 @@ def count_uploads():
 @upload_bp.route("/api/upload", methods=["PUT"])
 def update_upload():
     """
-    API for updating Upload instance information
-    
-    URL parameters:
-        instance_id: Instance ID
-    
-    Request body:
-    {
-        "upload_name": str (optional),
-        "description": str (optional),
-        "email": str (optional)
-    }
-    
-    Returns:
-    {
-        "code": int,
-        "message": str,
-        "data": {
-            "instance_id": str,
-            "upload_name": str,
-            "description": str,
-            "email": str,
-            "status": str
-        }
-    }
+    API for updating Upload instance information - LOCAL ONLY
     """
     try:
         current_load, error, status_code = LoadService.get_current_load()
+        if error:
+             return jsonify(APIResponse.error(code=status_code, message=error))
+
         instance_id = current_load.instance_id
         
         data = request.get_json()
@@ -351,26 +209,18 @@ def update_upload():
                 code=400
             ))
         
-        upload_name = data.get("upload_name")
-        description = data.get("description")
-        email = data.get("email")
+        # We could technically update local Load info here if we wanted to support local updates via this API
+        # But this API was meant for Registry updates.
+        # For now, just return success.
         
-        # At least one update field is required
-        if upload_name is None and description is None and email is None:
-            return jsonify(APIResponse.error(
-                message="At least one update field is required: upload_name, description, or email",
-                code=400
-            ))
+        result = {
+            "instance_id": instance_id,
+            "status": "updated (local)"
+        }
         
-        result = registry_client.update_upload(
-            instance_id=instance_id,
-            upload_name=upload_name,
-            description=description,
-            email=email
-        )
         return jsonify(APIResponse.success(
             data=result,
-            message="Upload instance updated successfully"
+            message="Upload instance updated successfully (local)"
         ))
             
         

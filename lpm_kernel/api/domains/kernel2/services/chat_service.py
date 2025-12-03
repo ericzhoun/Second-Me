@@ -17,6 +17,7 @@ from lpm_kernel.api.domains.kernel2.services.prompt_builder import (
     RoleBasedStrategy,
     KnowledgeEnhancedStrategy,
 )
+from lpm_kernel.common.gemini_client import GeminiClient
 
 logger = logging.getLogger(__name__)
 
@@ -340,6 +341,11 @@ class ChatService:
         
         # Call LLM API
         try:
+            # If using GeminiClient, we can use the same interface thanks to the adapter
+            # But we log it specifically as requested
+            if isinstance(current_client, GeminiClient):
+                logger.info("Using Gemini client for chat")
+
             response = current_client.chat.completions.create(**api_params)
             if not stream:
                 logger.info(f"Response: {response.json() if hasattr(response, 'json') else response}")
