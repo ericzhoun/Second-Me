@@ -97,7 +97,10 @@ class SelfQA:
             if self.model_name.startswith("deepseek"):
                 self.client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
             elif user_llm_config.provider_type == 'gemini':
-                pass
+                if self.model_name:
+                    logger.info(f"Using thinking model for Gemini: {self.model_name}")
+                    # Client already initialized with Gemini
+                    pass
             else:
                 logger.error(f"Error model_name, longcot data generating model_name: deepseek series")
                 raise
