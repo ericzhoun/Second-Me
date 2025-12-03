@@ -6,6 +6,7 @@ from lpm_kernel.api.services.user_llm_config_service import UserLLMConfigService
 from typing import Optional, Dict, Any
 from openai import OpenAI
 from lpm_kernel.configs.config import Config
+from lpm_kernel.common.gemini_client import GeminiClient
 
 logger = logging.getLogger(__name__)
 
@@ -29,14 +30,23 @@ class ExpertLLMService:
     #     return self._config
         
     @property
-    def client(self) -> OpenAI:
-        """Get the OpenAI client for expert LLM"""
+    def client(self) -> Union[OpenAI, GeminiClient]:
+        """Get the LLM client (OpenAI or Gemini) for expert LLM"""
         if self._client is None:
             self.user_llm_config = self.user_llm_config_service.get_available_llm()
-            self._client = OpenAI(
-                api_key=self.user_llm_config.chat_api_key,
-                base_url=self.user_llm_config.chat_endpoint,
-            )
+
+            if self.user_llm_config.provider_type == 'gemini':
+                logger.info("Initializing Gemini client for Expert LLM service")
+                self._client = GeminiClient(
+                    api_key=self.user_llm_config.chat_api_key,
+                    base_url=self.user_llm_config.chat_endpoint
+                )
+            else:
+                logger.info("Initializing OpenAI client for Expert LLM service")
+                self._client = OpenAI(
+                    api_key=self.user_llm_config.chat_api_key,
+                    base_url=self.user_llm_config.chat_endpoint,
+                )
         return self._client
 
     def get_model_params(self) -> Dict[str, Any]:

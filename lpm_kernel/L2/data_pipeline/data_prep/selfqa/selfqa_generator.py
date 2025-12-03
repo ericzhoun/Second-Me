@@ -11,6 +11,7 @@ from lpm_kernel.L2.data_pipeline.data_prep.selfqa.selfqa_prompt import (
 )
 from lpm_kernel.api.services.user_llm_config_service import UserLLMConfigService
 from lpm_kernel.configs.config import Config
+from lpm_kernel.common.gemini_client import GeminiClient
 from lpm_kernel.configs.logging import get_train_process_logger
 logger = get_train_process_logger()
 
@@ -75,10 +76,17 @@ class SelfQA:
         else:
             self.model_name = user_llm_config.chat_model_name
     
-            self.client = openai.OpenAI(
-                api_key=user_llm_config.chat_api_key,
-                base_url=user_llm_config.chat_endpoint,
-            )
+            if user_llm_config.provider_type == 'gemini':
+                logger.info("Initializing Gemini client for SelfQA generation")
+                self.client = GeminiClient(
+                    api_key=user_llm_config.chat_api_key,
+                    base_url=user_llm_config.chat_endpoint
+                )
+            else:
+                self.client = openai.OpenAI(
+                    api_key=user_llm_config.chat_api_key,
+                    base_url=user_llm_config.chat_endpoint,
+                )
         self.max_workers = os.environ.get("concurrency_threads", 2)
         self.data_synthesis_mode = os.environ.get("DATA_SYNTHESIS_MODE", "low")
         if self.is_cot:
@@ -88,6 +96,8 @@ class SelfQA:
             self.base_url = user_llm_config.thinking_endpoint
             if self.model_name.startswith("deepseek"):
                 self.client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
+            elif user_llm_config.provider_type == 'gemini':
+                pass
             else:
                 logger.error(f"Error model_name, longcot data generating model_name: deepseek series")
                 raise
