@@ -48,7 +48,7 @@ class EmbeddingService:
                 if collection.metadata.get("dimension") != self.dimension:
                     logger.warning(f"Dimension mismatch in '{collection_name}' collection: {collection.metadata.get('dimension')} vs {self.dimension}")
                     dimension_mismatch_detected = True
-            except ValueError:
+            except (ValueError, chromadb.errors.NotFoundError):
                 # Collection doesn't exist yet, will be created later
                 pass
         
@@ -65,7 +65,7 @@ class EmbeddingService:
                 logger.error(f"Collection 'documents' still has incorrect dimension after reinitialization: {doc_dimension} vs {self.dimension}")
                 # Try to reinitialize again if dimension is still incorrect
                 raise RuntimeError(f"Failed to set correct dimension for 'documents' collection: {doc_dimension} vs {self.dimension}")
-        except ValueError:
+        except (ValueError, chromadb.errors.NotFoundError):
             # Collection doesn't exist, create it with the correct dimension
             try:
                 self.document_collection = self.client.create_collection(
@@ -84,7 +84,7 @@ class EmbeddingService:
                 logger.error(f"Collection 'document_chunks' still has incorrect dimension after reinitialization: {chunk_dimension} vs {self.dimension}")
                 # Try to reinitialize again if dimension is still incorrect
                 raise RuntimeError(f"Failed to set correct dimension for 'document_chunks' collection: {chunk_dimension} vs {self.dimension}")
-        except ValueError:
+        except (ValueError, chromadb.errors.NotFoundError):
             # Collection doesn't exist, create it with the correct dimension
             try:
                 self.chunk_collection = self.client.create_collection(

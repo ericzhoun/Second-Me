@@ -379,7 +379,7 @@ class LoadService:
                     logger.info(f"Successfully deleted {len(all_docs['ids'])} documents from 'documents' collection")
                 else:
                     logger.info("No documents found in 'documents' collection")
-            except ValueError as e:
+            except (ValueError, chromadb.errors.NotFoundError) as e:
                 logger.info(f"Collection 'documents' does not exist: {str(e)}")
             except Exception as e:
                 logger.error(f"Error clearing 'documents' collection: {str(e)}")
@@ -394,7 +394,7 @@ class LoadService:
                     logger.info(f"Successfully deleted {len(all_chunks['ids'])} chunks from 'document_chunks' collection")
                 else:
                     logger.info("No chunks found in 'document_chunks' collection")
-            except ValueError as e:
+            except (ValueError, chromadb.errors.NotFoundError) as e:
                 logger.info(f"Collection 'document_chunks' does not exist: {str(e)}")
             except Exception as e:
                 logger.error(f"Error clearing 'document_chunks' collection: {str(e)}")

@@ -166,28 +166,28 @@ else
 endif
 
 ifeq ($(WINDOWS),1)
-# On Windows, use Git Bash to run shell scripts
-SHELL := C:/Program Files/Git/bin/bash.exe
+# On Windows, use Git Bash to run shell scripts via explicit bash call
+BASH := "C:/Program Files/Git/bin/bash.exe"
 setup:
-	./scripts/setup.sh
+	$(BASH) ./scripts/setup.sh
 
 start:
-	./scripts/start.sh
+	$(BASH) ./scripts/start.sh
 
 stop:
-	./scripts/stop.sh
+	$(BASH) ./scripts/stop.sh
 
 restart:
-	./scripts/restart.sh
+	$(BASH) ./scripts/restart.sh
 
 restart-backend:
-	./scripts/restart-backend.sh
+	$(BASH) ./scripts/restart-backend.sh
 
 restart-force:
-	./scripts/restart-force.sh
+	$(BASH) ./scripts/restart-force.sh
 
 status:
-	./scripts/status.sh
+	$(BASH) ./scripts/status.sh
 else
 setup:
 	./scripts/setup.sh

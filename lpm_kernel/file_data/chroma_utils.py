@@ -82,7 +82,7 @@ def reinitialize_chroma_collections(dimension: int = 1536) -> bool:
                 client.get_collection(name="documents")
                 client.delete_collection(name="documents")
                 logger.info("Deleted 'documents' collection")
-            except ValueError:
+            except (ValueError, chromadb.errors.NotFoundError):
                 logger.info("'documents' collection does not exist, will create new")
         except Exception as e:
             logger.error(f"Error deleting 'documents' collection: {str(e)}", exc_info=True)
@@ -109,7 +109,7 @@ def reinitialize_chroma_collections(dimension: int = 1536) -> bool:
                 client.get_collection(name="document_chunks")
                 client.delete_collection(name="document_chunks")
                 logger.info("Deleted 'document_chunks' collection")
-            except ValueError:
+            except (ValueError, chromadb.errors.NotFoundError):
                 logger.info("'document_chunks' collection does not exist, will create new")
         except Exception as e:
             logger.error(f"Error deleting 'document_chunks' collection: {str(e)}", exc_info=True)

@@ -256,7 +256,7 @@ def get_document_embeddings(document_id: int):
                 else chunk.content,
                 "has_embedding": chunk.has_embedding,
                 "embedding_length": len(chunk_embeddings.get(chunk.id, []))
-                if chunk_embeddings.get(chunk.id)
+                if chunk_embeddings.get(chunk.id) is not None
                 else 0,
                 "embedding_vector": chunk_embeddings.get(chunk.id)
                 if include_vectors

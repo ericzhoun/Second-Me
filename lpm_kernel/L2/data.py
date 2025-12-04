@@ -570,15 +570,28 @@ class L2DataProcessor:
         with open(summarize_descriptions_path, "w", encoding="utf-8") as f2:
             f2.write(summarize_descriptions)
 
-        # Run GraphRAG indexing
+        # Run GraphRAG indexing (use poetry run for cross-platform compatibility)
         try:
             result = subprocess.run(
                 [
-                    "bash",
+                    "poetry",
+                    "run",
+                    "graphrag",
+                    "index",
+                    "--config",
                     os.path.join(
                         os.getcwd(),
-                        "lpm_kernel/L2/data_pipeline/data_prep/scripts/graphrag_indexing.sh",
+                        "lpm_kernel/L2/data_pipeline/graphrag_indexing/settings.yaml",
                     ),
+                    "--root",
+                    os.path.join(
+                        os.getcwd(),
+                        "lpm_kernel/L2/data_pipeline/graphrag_indexing",
+                    ),
+                    "--method",
+                    "standard",
+                    "--logger",
+                    "none",
                 ],
                 check=True,
                 text=True,
@@ -589,7 +602,7 @@ class L2DataProcessor:
                 raise RuntimeError("subprocess.run graphrag index error")
         except Exception as e:
             raise
-
+        
         """Post-processing"""
 
         self.creat_mapping(

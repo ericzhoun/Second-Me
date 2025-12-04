@@ -31,5 +31,5 @@ def openai_strategy(user_llm_config: Optional[UserLLMConfigDTO], chunked_texts):
         return embeddings_array
 
     except requests.exceptions.RequestException as e:
-        raise Exception(f"Failed to get embeddings: {str(e)}", exc_info=True)
+        raise Exception(f"Failed to get embeddings: {str(e)}") from e
 
