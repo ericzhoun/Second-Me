@@ -165,6 +165,30 @@ else
 	@rm -f .gpu_selected
 endif
 
+ifeq ($(WINDOWS),1)
+# On Windows, use Git Bash to run shell scripts via explicit bash call
+BASH := "C:/Program Files/Git/bin/bash.exe"
+setup:
+	$(BASH) ./scripts/setup.sh
+
+start:
+	$(BASH) ./scripts/start.sh
+
+stop:
+	$(BASH) ./scripts/stop.sh
+
+restart:
+	$(BASH) ./scripts/restart.sh
+
+restart-backend:
+	$(BASH) ./scripts/restart-backend.sh
+
+restart-force:
+	$(BASH) ./scripts/restart-force.sh
+
+status:
+	$(BASH) ./scripts/status.sh
+else
 setup:
 	./scripts/setup.sh
 
@@ -185,6 +209,7 @@ restart-force:
 
 status:
 	./scripts/status.sh
+endif
 
 # Docker commands
 # Set Docker environment variable for all Docker commands

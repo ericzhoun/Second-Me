@@ -16,6 +16,7 @@ from lpm_kernel.L2.data_pipeline.data_prep.preference.prompts import (
     EN_SYS_TEMPLATES, EN_SYS_COT_TEMPLATES
 )
 import traceback
+from lpm_kernel.common.gemini_client import GeminiClient
 from lpm_kernel.configs.logging import get_train_process_logger
 logger = get_train_process_logger()
 
@@ -76,11 +77,19 @@ class PreferenceQAGenerator:
             self.model_name = None
         else:
             self.model_name = user_llm_config.chat_model_name
-    
-            self.client = openai.OpenAI(
-                api_key=user_llm_config.chat_api_key,
-                base_url=user_llm_config.chat_endpoint,
-            )
+
+            if user_llm_config.provider_type == 'gemini':
+                logger.info("Initializing Gemini client for PreferenceQA generation")
+                self.client = GeminiClient(
+                    api_key=user_llm_config.chat_api_key,
+                    base_url=user_llm_config.chat_endpoint
+                )
+            else:
+                self.client = openai.OpenAI(
+                    api_key=user_llm_config.chat_api_key,
+                    base_url=user_llm_config.chat_endpoint,
+                )
+
         if self.is_cot:
             logger.info("generate pereference data in longcot pattern!!!")
             self.model_name = user_llm_config.thinking_model_name
@@ -88,6 +97,17 @@ class PreferenceQAGenerator:
             self.base_url = user_llm_config.thinking_endpoint
             if self.model_name.startswith("deepseek"):
                 self.client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
+            elif user_llm_config.provider_type == 'gemini':
+                # For Gemini, assume thinking models are used if model name indicates it or just reuse main logic
+                # Gemini doesn't strictly need a separate client if api key is same, but to be consistent with logic:
+                # If thinking model is specified and provider is Gemini, reuse GeminiClient with thinking credentials?
+                # Actually if provider is gemini, user might not have set 'thinking_model_name' to deepseek.
+                # If they did, then it's a conflict.
+                # Assuming if is_cot is true and provider is gemini, we use the Gemini client with thinking model name if provided.
+                if self.model_name:
+                    logger.info(f"Using thinking model for Gemini: {self.model_name}")
+                    # Client already initialized with Gemini
+                    pass
             else:
                 logger.error(f"Error model_name, longcot data generating model_name: deepseek series")
                 raise

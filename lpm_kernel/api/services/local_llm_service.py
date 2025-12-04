@@ -96,7 +96,7 @@ class LocalLLMService:
 
             # Get the correct path to the llama-server executable
             base_dir = os.getcwd()
-            server_path = os.path.join(base_dir, "llama.cpp", "build", "bin", "llama-server")
+            server_path = os.path.join(base_dir, "llama.cpp", "build", "bin","Release","llama-server")
             
             # For Windows, add .exe extension if needed
             if os.name == 'nt' and not server_path.endswith('.exe'):
@@ -298,7 +298,7 @@ class LocalLLMService:
         """
         try:
             base_dir = os.getcwd()
-            server_path = os.path.join(base_dir, "llama.cpp", "build", "bin", "llama-server")
+            server_path = os.path.join(base_dir, "llama.cpp", "build", "bin","Release","llama-server")
             server_exec_name = os.path.basename(server_path)
             
             for proc in psutil.process_iter(["pid", "name", "cmdline"]):

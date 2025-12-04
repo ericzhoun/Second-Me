@@ -47,7 +47,7 @@ def init_chroma_db():
                 if collection.metadata.get("dimension") != dimension:
                     print(f"Warning: Existing '{collection_name}' collection has dimension {collection.metadata.get('dimension')}, but current model requires {dimension}")
                     dimension_mismatch_detected = True
-            except ValueError:
+            except (ValueError, chromadb.errors.NotFoundError):
                 # Collection doesn't exist yet, will be created later
                 pass
         
@@ -66,7 +66,7 @@ def init_chroma_db():
                 # Verify dimension after possible reinitialization
                 if collection.metadata.get("dimension") != dimension:
                     print(f"Error: Collection '{collection_name}' still has incorrect dimension after reinitialization: {collection.metadata.get('dimension')} vs {dimension}")
-            except ValueError:
+            except (ValueError, chromadb.errors.NotFoundError):
                 # Create collection if it doesn't exist
                 collection = client.create_collection(
                     name=collection_name,

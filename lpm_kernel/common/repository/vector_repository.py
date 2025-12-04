@@ -28,14 +28,11 @@ class ChromaRepository(BaseVectorRepository):
     def __init__(self, collection_name: str, persist_directory: str = "./chroma_db"):
         self.client = chromadb.PersistentClient(path=persist_directory)
 
-        # Check if collection exists, create it if it doesn't
-        try:
-            self.collection = self.client.get_collection(name=collection_name)
-        except ValueError:  # ValueError is thrown when Collection does not exist
-            self.collection = self.client.create_collection(
-                name=collection_name,
-                metadata={"hnsw:space": "cosine", "dimension": 1536},
-            )
+        # Use get_or_create_collection to handle both existing and new collections
+        self.collection = self.client.get_or_create_collection(
+            name=collection_name,
+            metadata={"hnsw:space": "cosine", "dimension": 1536},
+        )
 
     def add(self, documents: List[VectorDocument]) -> None:
         """

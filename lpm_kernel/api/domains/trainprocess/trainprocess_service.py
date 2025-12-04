@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 import time
 import psutil
 from typing import Optional, Dict
@@ -657,7 +658,7 @@ class TrainProcessService:
             num_train_epochs = training_params.get("number_of_epochs")
             concurrency_threads = training_params.get("concurrency_threads")
             data_synthesis_mode = training_params.get("data_synthesis_mode")
-            use_cuda = training_params.get("use_cuda", False)
+            use_cuda = training_params.get("use_cuda", True)
             is_cot = training_params.get("is_cot", False)
             
             # Log training parameters
@@ -669,26 +670,82 @@ class TrainProcessService:
             logger.info(f"  Use CUDA: {use_cuda}")
             logger.info(f"  Is CoT: {is_cot}")
             
-            # Prepare arguments for the script
-            # Build command line arguments, need to include script path as the first parameter
-            cmd = [
-                script_path,
-                "--lr", str(learning_rate),
-                "--epochs", str(num_train_epochs),
-                "--threads", str(concurrency_threads),
-                "--mode", str(data_synthesis_mode),
-                "--cuda", str(use_cuda),
-                "--is_cot", str(is_cot)
-            ]
-            
-            # Ensure log directory exists
-            os.makedirs(os.path.dirname(log_path), exist_ok=True)
-            
             # Set environment variables to improve tqdm output
             env = os.environ.copy()
             env["PYTHONUNBUFFERED"] = "1"  # Force Python to be unbuffered
             env["FORCE_COLOR"] = "1"       # Force colored output
             env["TQDM_FORCE_TTY"] = "1"    # Force tqdm to use TTY features
+            
+            # Set threading environment variables if concurrency_threads > 1
+            if concurrency_threads and int(concurrency_threads) > 1:
+                env["OMP_NUM_THREADS"] = str(concurrency_threads)
+                env["MKL_NUM_THREADS"] = str(concurrency_threads)
+                env["NUMEXPR_NUM_THREADS"] = str(concurrency_threads)
+                env["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
+            
+            # Set CUDA environment variables
+            if use_cuda:
+                env["CUDA_VISIBLE_DEVICES"] = "0"
+                env["CUDA_LAUNCH_BLOCKING"] = "0"
+            else:
+                env["CUDA_VISIBLE_DEVICES"] = ""
+            
+            # Add project root to PYTHONPATH so lpm_kernel module can be found
+            project_root = os.getcwd()
+            existing_pythonpath = env.get("PYTHONPATH", "")
+            if existing_pythonpath:
+                env["PYTHONPATH"] = f"{project_root}{os.pathsep}{existing_pythonpath}"
+            else:
+                env["PYTHONPATH"] = project_root
+            
+            # Determine if we should use half precision (bf16)
+            # Use bf16 only on non-Apple platforms with CUDA
+            platform_name = os.environ.get("PLATFORM", "")
+            use_half = "True" if platform_name != "apple" and use_cuda else "False"
+            
+            # Build command to run Python training script directly (cross-platform)
+            # This replaces the bash script for Windows compatibility
+            cmd = [
+                sys.executable,  # Use current Python interpreter
+                os.path.join(os.getcwd(), "lpm_kernel/L2/train.py"),
+                "--seed", "42",
+                "--model_name_or_path", os.environ.get("MODEL_BASE_PATH", ""),
+                "--user_name", os.environ.get("USER_NAME", ""),
+                "--dataset_name", "resources/L2/data/merged.json",
+                "--chat_template_format", "chatml",
+                "--add_special_tokens", "False",
+                "--append_concat_token", "False",
+                "--max_seq_length", "2048",
+                "--num_train_epochs", str(num_train_epochs),
+                "--save_total_limit", "2",
+                "--logging_steps", "20",
+                "--log_level", "info",
+                "--logging_strategy", "steps",
+                "--save_strategy", "steps",
+                "--save_steps", "5",
+                "--push_to_hub", "False",
+                "--bf16", use_half,
+                "--packing", "False",
+                "--learning_rate", str(learning_rate),
+                "--lr_scheduler_type", "cosine",
+                "--weight_decay", "1e-4",
+                "--max_grad_norm", "0.3",
+                "--output_dir", os.environ.get("MODEL_PERSONAL_DIR", ""),
+                "--per_device_train_batch_size", "2",
+                "--gradient_accumulation_steps", str(concurrency_threads),
+                "--gradient_checkpointing", "True",
+                "--use_reentrant", "False",
+                "--use_peft_lora", "True",
+                "--lora_r", "8",
+                "--lora_alpha", "16",
+                "--lora_dropout", "0.1",
+                "--lora_target_modules", "all-linear",
+                "--use_4bit_quantization", "False",
+                "--use_nested_quant", "False",
+                "--bnb_4bit_compute_dtype", "bfloat16",
+                "--is_cot", str(is_cot),
+                "--use_cuda", str(use_cuda),
+            ]
             
             # Ensure log directory exists
             log_dir = os.path.dirname(log_path)
@@ -939,19 +996,46 @@ class TrainProcessService:
 
             # Ensure merged output directory exists
             os.makedirs(paths["merged_dir"], exist_ok=True)
-                
-            script_path = os.path.join(
-                os.getcwd(), "lpm_kernel/L2/merge_weights_for_user.sh"
-                )
+            
             log_path = os.path.join(os.getcwd(), "logs", f"merge_weights_{self.model_name}.log")
             
             # Ensure log directory exists
             os.makedirs(os.path.dirname(log_path), exist_ok=True)
-            # Use script executor to execute merge script
-            script_executor = ScriptExecutor()
-            result = script_executor.execute(
-                script_path=script_path, script_type="merge_weights", log_file=log_path
-            )
+            
+            # Run merge_lora_weights.py directly (cross-platform, replaces bash script)
+            env = os.environ.copy()
+            # Add project root to PYTHONPATH
+            project_root = os.getcwd()
+            existing_pythonpath = env.get("PYTHONPATH", "")
+            if existing_pythonpath:
+                env["PYTHONPATH"] = f"{project_root}{os.pathsep}{existing_pythonpath}"
+            else:
+                env["PYTHONPATH"] = project_root
+            
+            cmd = [
+                sys.executable,
+                "-u",  # Unbuffered output
+                os.path.join(os.getcwd(), "lpm_kernel/L2/merge_lora_weights.py"),
+                "--base_model_path", os.environ.get("MODEL_BASE_PATH", ""),
+                "--lora_adapter_path", os.environ.get("MODEL_PERSONAL_DIR", ""),
+                "--output_model_path", os.environ.get("MODEL_MERGED_DIR", ""),
+            ]
+            
+            logger.info(f"Executing merge weights command: {' '.join(cmd)}")
+            
+            with open(log_path, "w", encoding="utf-8") as log_file:
+                process = subprocess.Popen(
+                    cmd,
+                    env=env,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                )
+                return_code = process.wait()
+            
+            result = {
+                "returncode": return_code,
+                "error": f"Execution failed, return code: {return_code}" if return_code != 0 else None
+            }
             
             logger.info(f"Weight merge task result: {result}")
             

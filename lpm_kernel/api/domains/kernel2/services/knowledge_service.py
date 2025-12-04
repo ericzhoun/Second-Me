@@ -108,7 +108,7 @@ class L1KnowledgeRetriever:
 
             # get query embedding
             query_embedding = self.embedding_service.get_embedding(query)
-            if not query_embedding:
+            if query_embedding is None or (hasattr(query_embedding, '__len__') and len(query_embedding) == 0):
                 logger.error("Failed to get embedding for query text")
                 return ""
 
@@ -119,7 +119,7 @@ class L1KnowledgeRetriever:
                     f"{shade.get('title', '')} - {shade.get('description', '')}"
                 )
                 embedding = self.embedding_service.get_embedding(shade_text)
-                if embedding:
+                if embedding is not None and (not hasattr(embedding, '__len__') or len(embedding) > 0):
                     shade_embeddings.append((shade, embedding))
 
             if not shade_embeddings:

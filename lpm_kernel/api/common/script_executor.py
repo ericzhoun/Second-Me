@@ -4,12 +4,6 @@ import sys
 from typing import List, Optional, Dict, Any
 from lpm_kernel.common.logging import logger
 
-# Test if logging works properly
-logger.debug("DEBUG: ScriptExecutor module loaded")
-logger.info("INFO: ScriptExecutor module loaded")
-logger.warning("WARNING: ScriptExecutor module loaded")
-logger.error("ERROR: ScriptExecutor module loaded")
-
 
 class ScriptExecutor:
     def __init__(self):
