@@ -72,7 +72,7 @@ class DiversityDataGenerator:
                     base_url=user_llm_config.chat_endpoint,
                 )
         self.preference_language = preference_language
-        self.max_workers = int(os.environ.get("CONCURRENCY_THREADS", 2))
+        self.max_workers = int(os.environ.get("CONCURRENCY_THREADS", 1))
         self.data_synthesis_mode = os.environ.get("DATA_SYNTHESIS_MODE", "low")
         self.is_cot = is_cot
         if self.is_cot:
@@ -427,7 +427,7 @@ class DiversityDataGenerator:
         Returns:
             Tuple of (questions, answers, answer_types, flat_question_types, flat_clusters).
         """
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+        with ThreadPoolExecutor(max_workers=1) as executor:
             futures = [
                 executor.submit(self._Q_generate, cluster, question_type, templater, q_dict, language_desc, user_name)
                 for cluster, question_type in zip(
@@ -457,7 +457,7 @@ class DiversityDataGenerator:
         # safety check
         logger.info(f"Count: {cnt}, len(explode_clusters): {len(explode_clusters)}")
 
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+        with ThreadPoolExecutor(max_workers=1) as executor:
             futures = [
                 executor.submit(self._A_generate, cluster, question, question_type, templater, language_desc, user_name)
                 for cluster, question, question_type in zip(

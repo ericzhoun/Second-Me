@@ -47,6 +47,8 @@ class DataSynthesisMode(Enum):
 
 
 class SelfQA:
+    max_workers: int
+    
     def __init__(
         self,
         user_name: str,
@@ -87,7 +89,7 @@ class SelfQA:
                     api_key=user_llm_config.chat_api_key,
                     base_url=user_llm_config.chat_endpoint,
                 )
-        self.max_workers = int(os.environ.get("CONCURRENCY_THREADS", 2))
+        self.max_workers = int(os.environ.get("CONCURRENCY_THREADS", 1))
         self.data_synthesis_mode = os.environ.get("DATA_SYNTHESIS_MODE", "low")
         if self.is_cot:
             logger.info("generate selfQA data in longcot pattern!!!")
@@ -227,7 +229,7 @@ class SelfQA:
             return {"user": q, "assistant": a}
 
         # Use ThreadPoolExecutor with max_workers=self.max_workers
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             # Submit all questions to the executor
             future_to_question = {executor.submit(process_question, q): q for q in q_list}
             
