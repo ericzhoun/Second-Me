@@ -996,19 +996,46 @@ class TrainProcessService:
 
             # Ensure merged output directory exists
             os.makedirs(paths["merged_dir"], exist_ok=True)
-                
-            script_path = os.path.join(
-                os.getcwd(), "lpm_kernel/L2/merge_weights_for_user.sh"
-                )
+            
             log_path = os.path.join(os.getcwd(), "logs", f"merge_weights_{self.model_name}.log")
             
             # Ensure log directory exists
             os.makedirs(os.path.dirname(log_path), exist_ok=True)
-            # Use script executor to execute merge script
-            script_executor = ScriptExecutor()
-            result = script_executor.execute(
-                script_path=script_path, script_type="merge_weights", log_file=log_path
-            )
+            
+            # Run merge_lora_weights.py directly (cross-platform, replaces bash script)
+            env = os.environ.copy()
+            # Add project root to PYTHONPATH
+            project_root = os.getcwd()
+            existing_pythonpath = env.get("PYTHONPATH", "")
+            if existing_pythonpath:
+                env["PYTHONPATH"] = f"{project_root}{os.pathsep}{existing_pythonpath}"
+            else:
+                env["PYTHONPATH"] = project_root
+            
+            cmd = [
+                sys.executable,
+                "-u",  # Unbuffered output
+                os.path.join(os.getcwd(), "lpm_kernel/L2/merge_lora_weights.py"),
+                "--base_model_path", os.environ.get("MODEL_BASE_PATH", ""),
+                "--lora_adapter_path", os.environ.get("MODEL_PERSONAL_DIR", ""),
+                "--output_model_path", os.environ.get("MODEL_MERGED_DIR", ""),
+            ]
+            
+            logger.info(f"Executing merge weights command: {' '.join(cmd)}")
+            
+            with open(log_path, "w", encoding="utf-8") as log_file:
+                process = subprocess.Popen(
+                    cmd,
+                    env=env,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                )
+                return_code = process.wait()
+            
+            result = {
+                "returncode": return_code,
+                "error": f"Execution failed, return code: {return_code}" if return_code != 0 else None
+            }
             
             logger.info(f"Weight merge task result: {result}")
             
