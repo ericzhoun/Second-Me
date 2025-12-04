@@ -509,7 +509,7 @@ class DocumentService:
                 ids=[str(document_id)], include=["embeddings"]
             )
 
-            if results and results["embeddings"]:
+            if results and results["embeddings"] is not None and len(results["embeddings"]) > 0:
                 return results["embeddings"][0]
             return None
 

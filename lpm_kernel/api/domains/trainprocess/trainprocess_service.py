@@ -657,7 +657,7 @@ class TrainProcessService:
             num_train_epochs = training_params.get("number_of_epochs")
             concurrency_threads = training_params.get("concurrency_threads")
             data_synthesis_mode = training_params.get("data_synthesis_mode")
-            use_cuda = training_params.get("use_cuda", False)
+            use_cuda = training_params.get("use_cuda", True)
             is_cot = training_params.get("is_cot", False)
             
             # Log training parameters
