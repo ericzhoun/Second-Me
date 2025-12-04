@@ -20,6 +20,10 @@ const options = [
     value: 'openai'
   },
   {
+    label: 'Gemini',
+    value: 'gemini'
+  },
+  {
     label: 'Custom',
     value: 'litellm'
   }
@@ -89,6 +93,62 @@ const ModelConfigModal = (props: IProps) => {
       </div>
     );
   }, [baseModelConfig]);
+
+  const renderGemini = useCallback(() => {
+    return (
+      <div className="flex flex-col w-full gap-4">
+        <div className="p-4 border rounded-lg hover:shadow-md transition-shadow">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Embedding</label>
+          <div className="grid grid-cols-1 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Model Name (Optional)
+              </label>
+              <Input
+                className="w-full"
+                onChange={(e) => {
+                  updateBaseModelConfig({
+                    ...baseModelConfig,
+                    embedding_model_name: e.target.value
+                  });
+                }}
+                placeholder="models/text-embedding-004"
+                value={baseModelConfig.embedding_model_name}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+              <Input.Password
+                className="w-full"
+                onChange={(e) => {
+                  updateBaseModelConfig({
+                    ...baseModelConfig,
+                    embedding_api_key: e.target.value,
+                    // Also update the common key as fallback or main key depending on backend logic
+                    key: e.target.value
+                  });
+                }}
+                placeholder="Enter your Gemini API key"
+                value={baseModelConfig.embedding_api_key || baseModelConfig.key}
+              />
+            </div>
+          </div>
+          <div className="mt-2 text-sm text-gray-500">
+            You can get your API key from{' '}
+            <a
+              className="text-blue-500 hover:underline"
+              href="https://aistudio.google.com/app/apikey"
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              Google AI Studio
+            </a>
+            .
+          </div>
+        </div>
+      </div>
+    );
+  }, [baseModelConfig, updateBaseModelConfig]);
 
   const renderCustom = useCallback(() => {
     return (
@@ -209,8 +269,12 @@ const ModelConfigModal = (props: IProps) => {
       return renderOpenai();
     }
 
+    if (modelType === 'gemini') {
+      return renderGemini();
+    }
+
     return renderCustom();
-  }, [modelType, renderOpenai, renderCustom]);
+  }, [modelType, renderOpenai, renderGemini, renderCustom]);
 
   return (
     <Modal

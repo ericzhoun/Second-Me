@@ -63,6 +63,10 @@ const baseModelOptions = [
   {
     value: 'Qwen2.5-7B-Instruct',
     label: 'Qwen2.5-7B-Instruct (64GB+ RAM Recommended)'
+  },
+  {
+    value: 'Qwen3-Next-80B-A3B-Instruct',
+    label: 'Qwen3-Next-80B-A3B-Instruct (128GB+ RAM Recommended)'
   }
 ];
 
