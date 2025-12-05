@@ -1,9 +1,21 @@
 import { updateModelConfig } from '../../service/modelConfig';
 import { useModelConfigStore } from '../../store/useModelConfigStore';
-import { Input, Modal, Radio } from 'antd';
+import { Input, Modal, Radio, Select } from 'antd';
 import Image from 'next/image';
 import { useCallback, useEffect, useState } from 'react';
 import { QuestionCircleOutlined } from '@ant-design/icons';
+
+// Embedding model options per provider
+const openaiEmbeddingModels = [
+  { label: 'text-embedding-ada-002', value: 'text-embedding-ada-002' },
+  { label: 'text-embedding-3-small', value: 'text-embedding-3-small' },
+  { label: 'text-embedding-3-large', value: 'text-embedding-3-large' },
+];
+
+const geminiEmbeddingModels = [
+  { label: 'text-embedding-004', value: 'text-embedding-004' },
+  { label: 'embedding-001', value: 'embedding-001' },
+];
 
 interface IProps {
   open: boolean;
@@ -90,49 +102,46 @@ const ModelConfigModal = (props: IProps) => {
             .
           </div>
         </div>
+        <div className="p-4 border rounded-lg hover:shadow-md transition-shadow">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Embedding Model</label>
+          <Select
+            className="w-full"
+            onChange={(value) => {
+              updateBaseModelConfig({
+                ...baseModelConfig,
+                embedding_model_name: value
+              });
+            }}
+            options={openaiEmbeddingModels}
+            placeholder="Select embedding model"
+            value={baseModelConfig.embedding_model_name || 'text-embedding-ada-002'}
+          />
+          <div className="mt-2 text-sm text-gray-500">
+            Select the embedding model for document processing.
+          </div>
+        </div>
       </div>
     );
-  }, [baseModelConfig]);
+  }, [baseModelConfig, updateBaseModelConfig]);
 
   const renderGemini = useCallback(() => {
     return (
       <div className="flex flex-col w-full gap-4">
         <div className="p-4 border rounded-lg hover:shadow-md transition-shadow">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Embedding</label>
-          <div className="grid grid-cols-1 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Model Name (Optional)
-              </label>
-              <Input
-                className="w-full"
-                onChange={(e) => {
-                  updateBaseModelConfig({
-                    ...baseModelConfig,
-                    embedding_model_name: e.target.value
-                  });
-                }}
-                placeholder="models/text-embedding-004"
-                value={baseModelConfig.embedding_model_name}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
-              <Input.Password
-                className="w-full"
-                onChange={(e) => {
-                  updateBaseModelConfig({
-                    ...baseModelConfig,
-                    embedding_api_key: e.target.value,
-                    // Also update the common key as fallback or main key depending on backend logic
-                    key: e.target.value
-                  });
-                }}
-                placeholder="Enter your Gemini API key"
-                value={baseModelConfig.embedding_api_key || baseModelConfig.key}
-              />
-            </div>
-          </div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+          <Input.Password
+            className="w-full"
+            onChange={(e) => {
+              updateBaseModelConfig({
+                ...baseModelConfig,
+                embedding_api_key: e.target.value,
+                // Also update the common key as fallback or main key depending on backend logic
+                key: e.target.value
+              });
+            }}
+            placeholder="Enter your Gemini API key"
+            value={baseModelConfig.embedding_api_key || baseModelConfig.key}
+          />
           <div className="mt-2 text-sm text-gray-500">
             You can get your API key from{' '}
             <a
@@ -144,6 +153,24 @@ const ModelConfigModal = (props: IProps) => {
               Google AI Studio
             </a>
             .
+          </div>
+        </div>
+        <div className="p-4 border rounded-lg hover:shadow-md transition-shadow">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Embedding Model</label>
+          <Select
+            className="w-full"
+            onChange={(value) => {
+              updateBaseModelConfig({
+                ...baseModelConfig,
+                embedding_model_name: value
+              });
+            }}
+            options={geminiEmbeddingModels}
+            placeholder="Select embedding model"
+            value={baseModelConfig.embedding_model_name || 'text-embedding-004'}
+          />
+          <div className="mt-2 text-sm text-gray-500">
+            Select the Gemini embedding model for document processing.
           </div>
         </div>
       </div>
@@ -309,8 +336,20 @@ const ModelConfigModal = (props: IProps) => {
           <Radio.Group
             buttonStyle="solid"
             onChange={(e) => {
-              setModelType(e.target.value);
-              updateBaseModelConfig({ ...baseModelConfig, provider_type: e.target.value });
+              const newProviderType = e.target.value;
+              setModelType(newProviderType);
+              // Set default embedding model based on provider type
+              let defaultEmbeddingModel = baseModelConfig.embedding_model_name;
+              if (newProviderType === 'openai') {
+                defaultEmbeddingModel = 'text-embedding-ada-002';
+              } else if (newProviderType === 'gemini') {
+                defaultEmbeddingModel = 'text-embedding-004';
+              }
+              updateBaseModelConfig({ 
+                ...baseModelConfig, 
+                provider_type: newProviderType,
+                embedding_model_name: defaultEmbeddingModel
+              });
             }}
             optionType="button"
             options={options}

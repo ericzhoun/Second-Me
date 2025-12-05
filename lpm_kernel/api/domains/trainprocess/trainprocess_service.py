@@ -104,6 +104,10 @@ class TrainProcessService:
 
     def list_documents(self):
         """List all documents"""
+        if self.progress.is_step_completed(ProcessStep.LIST_DOCUMENTS):
+            logger.info("Skipping document listing, already completed.")
+            # Still need to return the documents for subsequent steps
+            return [doc.to_dict() for doc in document_service.list_documents()]
         try:
             # Mark step as in progress
             self.progress.mark_step_status(ProcessStep.LIST_DOCUMENTS, Status.IN_PROGRESS)            
@@ -120,6 +124,9 @@ class TrainProcessService:
 
     def generate_document_embeddings(self) -> bool:
         """Process embeddings for all documents"""
+        if self.progress.is_step_completed(ProcessStep.GENERATE_DOCUMENT_EMBEDDINGS):
+            logger.info("Skipping document embeddings generation, already completed.")
+            return True
         try:
             # Mark step as in progress
             self.progress.mark_step_status(ProcessStep.GENERATE_DOCUMENT_EMBEDDINGS, Status.IN_PROGRESS)
@@ -145,6 +152,9 @@ class TrainProcessService:
 
     def process_chunks(self) -> bool:
         """Process document chunks"""
+        if self.progress.is_step_completed(ProcessStep.CHUNK_DOCUMENT):
+            logger.info("Skipping document chunking, already completed.")
+            return True
         try:
             # Mark step as in progress
             self.progress.mark_step_status(ProcessStep.CHUNK_DOCUMENT, Status.IN_PROGRESS)
@@ -186,6 +196,9 @@ class TrainProcessService:
 
     def chunk_embedding(self) -> bool:
         """Process embeddings for all document chunks"""
+        if self.progress.is_step_completed(ProcessStep.CHUNK_EMBEDDING):
+            logger.info("Skipping chunk embedding, already completed.")
+            return True
         try:
             # Mark step as in progress
             self.progress.mark_step_status(ProcessStep.CHUNK_EMBEDDING, Status.IN_PROGRESS)
@@ -214,6 +227,9 @@ class TrainProcessService:
 
     def extract_dimensional_topics(self) -> bool:
         """Extract dimensional topics (L0)"""
+        if self.progress.is_step_completed(ProcessStep.EXTRACT_DIMENSIONAL_TOPICS):
+            logger.info("Skipping dimensional topics extraction, already completed.")
+            return True
         try:
             # Mark step as in progress
             self.progress.mark_step_status(ProcessStep.EXTRACT_DIMENSIONAL_TOPICS, Status.IN_PROGRESS)
@@ -236,6 +252,9 @@ class TrainProcessService:
             
     def generate_biography(self) -> bool:
         """Generate biography using L1 data"""
+        if self.progress.is_step_completed(ProcessStep.GENERATE_BIOGRAPHY):
+            logger.info("Skipping biography generation, already completed.")
+            return True
         try:
             # Mark step as in progress
             self.progress.mark_step_status(ProcessStep.GENERATE_BIOGRAPHY, Status.IN_PROGRESS)
@@ -262,6 +281,9 @@ class TrainProcessService:
 
     def model_download(self) -> bool:
         """Download model"""
+        if self.progress.is_step_completed(ProcessStep.MODEL_DOWNLOAD):
+            logger.info("Skipping model download, already completed.")
+            return True
         try:
             # Mark step as in progress
             self.progress.mark_step_status(ProcessStep.MODEL_DOWNLOAD, Status.IN_PROGRESS)
@@ -292,6 +314,9 @@ class TrainProcessService:
 
     def map_your_entity_network(self)->bool:
         """Map entity network using notes and basic info"""
+        if self.progress.is_step_completed(ProcessStep.MAP_ENTITY_NETWORK):
+            logger.info("Skipping entity network mapping, already completed.")
+            return True
         try:
             # Mark step as in progress
             self.progress.mark_step_status(ProcessStep.MAP_ENTITY_NETWORK, Status.IN_PROGRESS)
@@ -317,6 +342,9 @@ class TrainProcessService:
 
     def decode_preference_patterns(self)->bool:
         """Decode preference patterns using notes and related data"""
+        if self.progress.is_step_completed(ProcessStep.DECODE_PREFERENCE_PATTERNS):
+            logger.info("Skipping preference patterns decoding, already completed.")
+            return True
         try:
             params_manager = TrainingParamsManager()
             training_params = params_manager.get_latest_training_params()
@@ -354,6 +382,9 @@ class TrainProcessService:
 
     def reinforce_identity(self)->bool:
         """Reinforce identity using notes and related data"""
+        if self.progress.is_step_completed(ProcessStep.REINFORCE_IDENTITY):
+            logger.info("Skipping identity reinforcement, already completed.")
+            return True
         try:
             # Mark step as in progress
             self.progress.mark_step_status(ProcessStep.REINFORCE_IDENTITY, Status.IN_PROGRESS)
@@ -406,6 +437,9 @@ class TrainProcessService:
     
     def augment_content_retention(self) -> bool:
         """Augment content retention using notes, basic info and graph data"""
+        if self.progress.is_step_completed(ProcessStep.AUGMENT_CONTENT_RETENTION):
+            logger.info("Skipping content retention augmentation, already completed.")
+            return True
         try:
             # Mark step as in progress
             self.progress.mark_step_status(ProcessStep.AUGMENT_CONTENT_RETENTION, Status.IN_PROGRESS)

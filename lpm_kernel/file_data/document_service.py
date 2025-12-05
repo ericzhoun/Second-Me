@@ -439,9 +439,16 @@ class DocumentService:
                     ids=chunk_ids, include=["embeddings", "documents"]
                 )
 
-                # transfer chunk_id -> embedding
-                for i, chunk_id in enumerate(results["ids"]):
-                    embeddings[int(chunk_id)] = results["embeddings"][i]
+                # Safely access results without numpy array truthiness issues
+                if results is not None and isinstance(results, dict):
+                    result_ids = results.get("ids", [])
+                    result_embeddings = results.get("embeddings", [])
+                    
+                    # transfer chunk_id -> embedding
+                    if result_ids is not None and result_embeddings is not None:
+                        for i, chunk_id in enumerate(result_ids):
+                            if i < len(result_embeddings):
+                                embeddings[int(chunk_id)] = result_embeddings[i]
 
             return embeddings
 
@@ -509,8 +516,13 @@ class DocumentService:
                 ids=[str(document_id)], include=["embeddings"]
             )
 
-            if results and results["embeddings"]:
-                return results["embeddings"][0]
+            # Safely check results without numpy array truthiness issues
+            embeddings = None
+            if results is not None and isinstance(results, dict):
+                embeddings = results.get("embeddings")
+            
+            if embeddings is not None and hasattr(embeddings, '__len__') and len(embeddings) > 0:
+                return embeddings[0]
             return None
 
         except Exception as e:

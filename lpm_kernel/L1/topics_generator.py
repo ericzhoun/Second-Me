@@ -19,6 +19,7 @@ from lpm_kernel.L1.prompt import (
 )
 from lpm_kernel.L1.utils import find_connected_components
 from lpm_kernel.api.services.user_llm_config_service import UserLLMConfigService
+from lpm_kernel.common.gemini_client import GeminiClient
 from lpm_kernel.configs.logging import get_train_process_logger
 logger = get_train_process_logger()
 
@@ -44,11 +45,19 @@ class TopicsGenerator:
             self.client = None
             self.model_name = None
         else:
-            self.client = OpenAI(
-                api_key=self.user_llm_config.chat_api_key,
-                base_url=self.user_llm_config.chat_endpoint,
-            )
             self.model_name = self.user_llm_config.chat_model_name
+            
+            if self.user_llm_config.provider_type == 'gemini':
+                logger.info("Initializing Gemini client for TopicsGenerator")
+                self.client = GeminiClient(
+                    api_key=self.user_llm_config.chat_api_key,
+                    base_url=self.user_llm_config.chat_endpoint
+                )
+            else:
+                self.client = OpenAI(
+                    api_key=self.user_llm_config.chat_api_key,
+                    base_url=self.user_llm_config.chat_endpoint,
+                )
         logger.info(f"user_llm_config: {self.user_llm_config}")
         self.threshold = 0.85
         self._top_p_adjusted = False  # Flag to track if top_p has been adjusted
