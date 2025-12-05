@@ -2654,6 +2654,7 @@ class QwenModel(Model):
 
 
 @Model.register("Qwen2ForCausalLM")
+@Model.register("Qwen3ForCausalLM")
 class Qwen2Model(Model):
     model_arch = gguf.MODEL_ARCH.QWEN2
 

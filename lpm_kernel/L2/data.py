@@ -30,7 +30,6 @@ from lpm_kernel.L2.data_pipeline.data_prep.diversity.diversity_data_generator im
 from lpm_kernel.L2.data_pipeline.data_prep.preference.preference_QA_generate import PreferenceQAGenerator
 from lpm_kernel.L2.data_pipeline.data_prep.selfqa.selfqa_generator import SelfQA
 from lpm_kernel.L2.note_templates import OBJECTIVE_TEMPLATES, SUBJECTIVE_TEMPLATES
-from lpm_kernel.L2.utils import format_timestr
 from lpm_kernel.api.services.user_llm_config_service import UserLLMConfigService
 
 from lpm_kernel.configs.logging import get_train_process_logger
@@ -366,8 +365,7 @@ class L2DataProcessor:
 
         for note in note_list:
             if note.memory_type not in OBJECT_NOTE_TYPE:
-                note.create_time = format_timestr(note.create_time)
-
+                # note.create_time is already a formatted string, no additional formatting needed
                 basic_template = random.choice(selected_templates["basic"]).format(user_name=user_info["username"])
 
                 if note.insight:

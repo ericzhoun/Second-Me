@@ -49,6 +49,14 @@ interface TrainingDetail {
 
 const baseModelOptions = [
   {
+    value: 'Qwen3-8B',
+    label: 'Qwen3-8B'
+  },
+  {
+    value: 'Qwen3-0.6B',
+    label: 'Qwen3-0.6B (CPU-friendly / 8GB+ RAM)'
+  },
+  {
     value: 'Qwen2.5-0.5B-Instruct',
     label: 'Qwen2.5-0.5B-Instruct (8GB+ RAM Recommended)'
   },

@@ -306,17 +306,18 @@ def create_and_prepare_model(args, data_args, training_args, model_kwargs=None):
     use_cuda_requested = args.use_cuda
     device = "cpu"
 
-    # Always enable memory-adaptive loading by default (device_map="auto"), unless CUDA is off
+    # Only use device_map="auto" with quantization to avoid meta tensor issues
+    # For non-quantized models, use explicit device placement
     if cuda_available and use_cuda_requested:
         device = "cuda"
-        model_kwargs["device_map"] = "auto"
+        # Don't set device_map here - let quantization config or explicit loading handle it
     else:
         if use_cuda_requested and not cuda_available:
             logger.warning("⚠️ CUDA was requested but is not available on this system. Falling back to CPU.")
         elif cuda_available and not use_cuda_requested:
             logger.info("ℹ️ CUDA is available but not requested. Using CPU as specified.")
         else:
-            logger.info("ℹ️ CUDA is not available. Using CPU for training.")
+            logger.info("CUDA is not available. Using CPU for training.")
         # Explicitly remove device_map to force CPU-only
         if "device_map" in model_kwargs:
             model_kwargs.pop("device_map")
@@ -380,12 +381,70 @@ def create_and_prepare_model(args, data_args, training_args, model_kwargs=None):
             if "attn_implementation" not in load_kwargs and args.use_flash_attn:
                 load_kwargs["attn_implementation"] = "flash_attention_2"
             
-            # Set default device_map if not specified
-            if "device_map" not in load_kwargs and args.use_cuda and torch.cuda.is_available():
-                load_kwargs["device_map"] = "auto"
+            # Only use device_map="auto" if quantization is enabled
+            # Otherwise use explicit device placement to avoid meta tensor issues
+            if "device_map" not in load_kwargs:
+                if "quantization_config" in load_kwargs and args.use_cuda and torch.cuda.is_available():
+                    load_kwargs["device_map"] = "auto"
+                elif args.use_cuda and torch.cuda.is_available():
+                    # Use explicit torch_dtype and move model to device after loading
+                    load_kwargs["torch_dtype"] = torch.float16
+                    load_kwargs["low_cpu_mem_usage"] = True
                             
             logger.info(f"Loading model with parameters: {load_kwargs}")
             model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, **load_kwargs)
+    
+    except KeyError as e:
+        """Handle model type not recognized in transformers"""
+        model_type = str(e).strip("'")
+        logger.warning(f"Model type '{model_type}' not recognized by transformers")
+        logger.info("Attempting to load model with from_pretrained using auto_map...")
+        
+        try:
+            # Try loading directly without CONFIG_MAPPING
+            from transformers import AutoConfig
+            
+            # Load config first with trust_remote_code
+            config = AutoConfig.from_pretrained(
+                args.model_name_or_path,
+                trust_remote_code=True
+            )
+            logger.info(f"Config loaded successfully: {config.model_type}")
+            
+            # Now try loading the model
+            load_kwargs = {
+                "trust_remote_code": True,
+            }
+            load_kwargs.update(model_kwargs)
+            
+            if "attn_implementation" not in load_kwargs and args.use_flash_attn:
+                load_kwargs["attn_implementation"] = "flash_attention_2"
+            
+            # Only use device_map="auto" if quantization is enabled
+            if "device_map" not in load_kwargs:
+                if "quantization_config" in load_kwargs and args.use_cuda and torch.cuda.is_available():
+                    load_kwargs["device_map"] = "auto"
+                elif args.use_cuda and torch.cuda.is_available():
+                    load_kwargs["torch_dtype"] = torch.float16
+                    load_kwargs["low_cpu_mem_usage"] = True
+            
+            logger.info("Attempting model loading with trust_remote_code...")
+            model = AutoModelForCausalLM.from_pretrained(
+                args.model_name_or_path,
+                config=config,
+                **load_kwargs
+            )
+            logger.info("Model loaded successfully with custom config")
+            
+        except Exception as inner_e:
+            logger.error(f"Failed to load model even with custom approach: {str(inner_e)}")
+            logger.error("This model type is not supported by this version of transformers")
+            logger.error(f"Try updating transformers: pip install --upgrade transformers")
+            raise RuntimeError(
+                f"Unable to load model '{args.model_name_or_path}'. "
+                f"The model type '{model_type}' is not recognized. "
+                f"Try updating transformers library to the latest version."
+            ) from inner_e
     
     except (RuntimeError, torch.cuda.OutOfMemoryError, MemoryError) as e:
         # If standard approaches fail, try progressive fallbacks
@@ -430,6 +489,14 @@ def create_and_prepare_model(args, data_args, training_args, model_kwargs=None):
     if model is None:
         raise RuntimeError("Failed to load model with any memory adaptation technique")
 
+    # Move model to correct device if device_map wasn't used
+    # This ensures proper device placement without meta tensors
+    if args.use_cuda and torch.cuda.is_available():
+        # Check if model is already on CUDA (via device_map or quantization)
+        if not next(model.parameters()).is_cuda and not hasattr(model, 'hf_device_map'):
+            logger.info(f"Moving model to CUDA device: {device}")
+            model = model.to(device)
+    
     # Apply memory optimization to model
     model = memory_manager.optimize_model_for_training(model)
 
@@ -559,10 +626,11 @@ def formatting_prompts_func(example):
     Returns:
         Formatted text.
     """
-    out_text_list = []
-    for i in range(len(example["content"])):
-        out_text_list.append(example["content"][i])
-    return out_text_list
+    content = example.get("content", "")
+    # TRL expects a list of strings per example; ensure we always return a list with one string.
+    if isinstance(content, list):
+        return ["\n".join([c for c in content if isinstance(c, str)])]
+    return [content]
 
 # Improved logging setup
 def setup_logger(log_path, logger_name="download_logger"):
@@ -620,11 +688,11 @@ def save_hf_model(model_name=None, log_file_path=None) -> str:
             config = Config()
             model_name = config.get("training", {}).get("model_name")
             if not model_name:
-                logger.warning("No model name provided and none found in config. Using Qwen2.5-0.5B-Instruct as fallback.")
-                model_name = "Qwen2.5-0.5B-Instruct"
+                logger.warning("No model name provided and none found in config. Using Qwen3-8B as fallback.")
+                model_name = "Qwen3-8B"
         except Exception as e:
-            logger.warning(f"Failed to get model name from config: {str(e)}. Using Qwen2.5-0.5B-Instruct as fallback.")
-            model_name = "Qwen2.5-0.5B-Instruct"
+            logger.warning(f"Failed to get model name from config: {str(e)}. Using Qwen3-8B as fallback.")
+            model_name = "Qwen3-8B"
     
     base_dir = os.path.join(os.getcwd(), "resources/L2/base_models")
     # Normalize model name and check for path traversal attempts

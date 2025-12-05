@@ -21,7 +21,12 @@ from peft import LoraConfig
 from tqdm import tqdm
 from transformers import HfArgumentParser, TrainingArguments, set_seed
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from trl import SFTTrainer, SFTConfig, DataCollatorForCompletionOnlyLM
+from trl import SFTTrainer, SFTConfig
+try:
+    from trl import DataCollatorForCompletionOnlyLM
+except ImportError:
+    # Fallback for older versions of TRL
+    from transformers import DataCollatorForLanguageModeling as DataCollatorForCompletionOnlyLM
 
 # Local imports
 from lpm_kernel.L2.utils import (
@@ -252,16 +257,18 @@ def main(model_args, data_args, training_args):
             bnb_4bit_use_double_quant=model_args.use_nested_quant,
             bnb_4bit_quant_storage=quant_storage_dtype,
         )
-        # For 4-bit models, we can use device_map="auto"
-        model_kwargs["device_map"] = "auto"
+        # For 4-bit models, use device_map="auto" only if CUDA is enabled
+        if torch.cuda.is_available() and model_args.use_cuda:
+            model_kwargs["device_map"] = "auto"
         logger.info("Using 4-bit quantization for memory efficiency")
     elif model_args.use_8bit_quantization:
         from transformers import BitsAndBytesConfig
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
             load_in_8bit=model_args.use_8bit_quantization
         )
-        # For 8-bit models, we can use device_map="auto"
-        model_kwargs["device_map"] = "auto"
+        # For 8-bit models, use device_map="auto" only if CUDA is enabled
+        if torch.cuda.is_available() and model_args.use_cuda:
+            model_kwargs["device_map"] = "auto"
         logger.info("Using 8-bit quantization for memory efficiency")
     
     # Flash attention for memory efficiency when supported
@@ -299,7 +306,15 @@ def main(model_args, data_args, training_args):
     
     response_template = "\n<|im_start|>assistant\n"
     
-    collator = DataCollatorForCompletionOnlyLM(response_template, tokenizer=tokenizer)
+    # Create data collator based on what's available
+    try:
+        # Try TRL's DataCollatorForCompletionOnlyLM first
+        from trl import DataCollatorForCompletionOnlyLM
+        collator = DataCollatorForCompletionOnlyLM(response_template, tokenizer=tokenizer)
+    except (ImportError, TypeError):
+        # Fallback to transformers' default data collator
+        from transformers import DataCollatorForLanguageModeling
+        collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
     
     training_args.dataset_kwargs = {
         "append_concat_token": data_args.append_concat_token,
@@ -347,7 +362,7 @@ def main(model_args, data_args, training_args):
 
     trainer = SFTTrainer(
         model=model,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,  # Use processing_class instead of tokenizer for newer TRL versions
         args=training_args,
         train_dataset=train_dataset,
         peft_config=peft_config,
