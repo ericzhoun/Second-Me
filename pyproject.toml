@@ -5,6 +5,11 @@ description = ""
 authors = ["Kevin <kevin@mindverse.ai>"]
 readme = "README.md"
 
+[[tool.poetry.source]]
+name = "pytorch_cu121"
+url = "https://download.pytorch.org/whl/cu121"
+priority = "explicit"
+
 [tool.poetry.dependencies]
 python = ">=3.12,<3.13"
 flask = "^3.0.0"
@@ -37,6 +42,9 @@ modelscope = "^1.25.0"
 sentence-transformers = "^2.6.0"
 google-ai-generativelanguage = "^0.6.15"
 huggingface-hub = "^0.36.0"
+torch = { version = "2.3.1", source = "pytorch_cu121" }
+torchvision = { version = "0.18.1", source = "pytorch_cu121" }
+transformers = "^4.57.3"
 
 
 # Development environment dependencies
@@ -48,13 +56,11 @@ pytest = "7.4.4"
 ruff = "0.1.15"
 pandas = "2.2.3"
 fnllm = {extras = ["azure", "openai"], version = "0.1.2"}
-transformers = ">=4.57.3"
-torch = "2.8.0"
-peft = "0.14.0"
-trl = "0.24.0"
-gguf = "0.10.0"
-datasets = "3.3.2"
-jiter = "0.8.2"
+peft = "^0.14.0"
+trl = "^0.13.0"
+gguf = "^0.10.0"
+datasets = "^3.3.2"
+jiter = "^0.8.2"
 
 # Documentation environment dependencies
 # Use 'poetry install --with docs' to install documentation dependencies
