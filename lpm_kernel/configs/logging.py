@@ -5,9 +5,57 @@ import logging.config
 import logging.handlers
 import datetime
 import shutil
+import time
 
 # Get project root directory
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+
+
+class SafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
+    """
+    A RotatingFileHandler that handles Windows file locking issues gracefully.
+    If rotation fails due to file being locked, it continues logging to the current file.
+    """
+
+    def doRollover(self):
+        """
+        Override doRollover to handle Windows file locking issues.
+        """
+        if self.stream:
+            self.stream.close()
+            self.stream = None
+
+        # Try rotation with retries
+        for attempt in range(3):
+            try:
+                # Standard rotation logic
+                if self.backupCount > 0:
+                    for i in range(self.backupCount - 1, 0, -1):
+                        sfn = self.rotation_filename("%s.%d" % (self.baseFilename, i))
+                        dfn = self.rotation_filename("%s.%d" % (self.baseFilename, i + 1))
+                        if os.path.exists(sfn):
+                            if os.path.exists(dfn):
+                                os.remove(dfn)
+                            os.rename(sfn, dfn)
+                    dfn = self.rotation_filename(self.baseFilename + ".1")
+                    if os.path.exists(dfn):
+                        os.remove(dfn)
+                    self.rotate(self.baseFilename, dfn)
+                break
+            except PermissionError:
+                if attempt < 2:
+                    time.sleep(0.1)  # Brief wait before retry
+                else:
+                    # If rotation fails after retries, just truncate the file
+                    # or continue appending - don't crash
+                    pass
+            except Exception:
+                # For any other error, just continue
+                break
+
+        # Reopen the file
+        if not self.delay:
+            self.stream = self._open()
 
 # Define log directories
 LOG_BASE_DIR = os.path.join(PROJECT_ROOT, "logs")
@@ -46,7 +94,7 @@ LOGGING_CONFIG = {
             "stream": sys.stdout,
         },
         "file": {
-            "class": "logging.handlers.RotatingFileHandler",
+            "()": SafeRotatingFileHandler,
             "level": "INFO",
             "formatter": "standard",
             "filename": APP_LOG_FILE,
@@ -55,7 +103,7 @@ LOGGING_CONFIG = {
             "encoding": "utf-8",
         },
         "train_process_file": {
-            "class": "logging.handlers.RotatingFileHandler",
+            "()": SafeRotatingFileHandler,
             "level": "INFO",
             "formatter": "standard",
             "filename": TRAIN_LOG_FILE,

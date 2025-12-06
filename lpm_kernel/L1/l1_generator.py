@@ -7,6 +7,7 @@ import os
 
 from openai import OpenAI
 
+from lpm_kernel.common.gemini_client import GeminiClient
 from lpm_kernel.L1.bio import (
     Bio,
     CONFIDENCE_LEVELS_INT,
@@ -188,11 +189,19 @@ class L1Generator:
             self.client = None
             self.model_name = None
         else:
-            self.client = OpenAI(
-                api_key=self.user_llm_config.chat_api_key,
-                base_url=self.user_llm_config.chat_endpoint,
-            )
             self.model_name = self.user_llm_config.chat_model_name
+            
+            if self.user_llm_config.provider_type == 'gemini':
+                logger.info("Initializing Gemini client for L1Generator")
+                self.client = GeminiClient(
+                    api_key=self.user_llm_config.chat_api_key,
+                    base_url=self.user_llm_config.chat_endpoint
+                )
+            else:
+                self.client = OpenAI(
+                    api_key=self.user_llm_config.chat_api_key,
+                    base_url=self.user_llm_config.chat_endpoint,
+                )
         self._top_p_adjusted = False  # Flag to track if top_p has been adjusted
 
     def _fix_top_p_param(self, error_message: str) -> bool:
@@ -298,6 +307,15 @@ class L1Generator:
         """
         user_prompt = global_bio.to_str()
 
+        # Validate that we have content to generate bio from
+        if not user_prompt or not user_prompt.strip():
+            logger.warning("Empty user_prompt in _global_bio_generate, skipping LLM call")
+            global_bio.summary_third_view = ""
+            global_bio.content_third_view = ""
+            global_bio.summary_second_view = ""
+            global_bio.content_second_view = ""
+            return global_bio
+
         system_prompt = GLOBAL_BIO_SYSTEM_PROMPT
 
         global_bio_message = self.__build_message(
@@ -306,6 +324,16 @@ class L1Generator:
 
         response = self._call_llm_with_retry(global_bio_message)
         third_perspective_result = response.choices[0].message.content
+        
+        # Handle empty response from LLM
+        if not third_perspective_result or not third_perspective_result.strip():
+            logger.warning("Empty response from LLM in _global_bio_generate")
+            global_bio.summary_third_view = ""
+            global_bio.content_third_view = ""
+            global_bio.summary_second_view = ""
+            global_bio.content_second_view = ""
+            return global_bio
+            
         global_bio.summary_third_view = third_perspective_result
         global_bio.content_third_view = global_bio.complete_content()
         global_bio = self._shift_perspective(global_bio)
@@ -325,6 +353,13 @@ class L1Generator:
         """
         system_prompt = COMMON_PERSPECTIVE_SHIFT_SYSTEM_PROMPT
         user_prompt = global_bio.summary_third_view
+
+        # Validate that we have content to shift perspective on
+        if not user_prompt or not user_prompt.strip():
+            logger.warning("Empty summary_third_view detected in _shift_perspective, skipping perspective shift")
+            global_bio.summary_second_view = ""
+            global_bio.content_second_view = global_bio.complete_content(second_view=True)
+            return global_bio
 
         shift_perspective_message = self.__build_message(
             system_prompt, user_prompt, language=self.preferred_language

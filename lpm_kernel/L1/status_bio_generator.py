@@ -3,6 +3,7 @@ import logging
 
 from openai import OpenAI
 
+from lpm_kernel.common.gemini_client import GeminiClient
 from lpm_kernel.L1.bio import Bio, Chat, Note, Todo, UserInfo
 from lpm_kernel.L1.prompt import PREFER_LANGUAGE_SYSTEM_PROMPT, STATUS_BIO_SYSTEM_PROMPT
 from lpm_kernel.L1.utils import get_cur_time, is_valid_chat, is_valid_note, is_valid_todo
@@ -30,12 +31,20 @@ class StatusBioGenerator:
             self.client = None
             self.model_name = None
         else:
-            self.client = OpenAI(
-                api_key=self.user_llm_config.chat_api_key,
-                base_url=self.user_llm_config.chat_endpoint,
-                timeout=45.0,  # Set global timeout
-            )
             self.model_name = self.user_llm_config.chat_model_name
+            
+            if self.user_llm_config.provider_type == 'gemini':
+                logger.info("Initializing Gemini client for StatusBioGenerator")
+                self.client = GeminiClient(
+                    api_key=self.user_llm_config.chat_api_key,
+                    base_url=self.user_llm_config.chat_endpoint
+                )
+            else:
+                self.client = OpenAI(
+                    api_key=self.user_llm_config.chat_api_key,
+                    base_url=self.user_llm_config.chat_endpoint,
+                    timeout=45.0,  # Set global timeout
+                )
         self._top_p_adjusted = False  # Flag to track if top_p has been adjusted
 
     def _fix_top_p_param(self, error_message: str) -> bool:

@@ -6,6 +6,7 @@ import traceback
 from openai import OpenAI
 import numpy as np
 
+from lpm_kernel.common.gemini_client import GeminiClient
 from lpm_kernel.L1.bio import (
     Cluster,
     Note,
@@ -48,11 +49,19 @@ class ShadeGenerator:
             self.client = None
             self.model_name = None
         else:
-            self.client = OpenAI(
-                api_key=self.user_llm_config.chat_api_key,
-                base_url=self.user_llm_config.chat_endpoint,
-            )
             self.model_name = self.user_llm_config.chat_model_name
+            
+            if self.user_llm_config.provider_type == 'gemini':
+                logger.info("Initializing Gemini client for ShadeGenerator")
+                self.client = GeminiClient(
+                    api_key=self.user_llm_config.chat_api_key,
+                    base_url=self.user_llm_config.chat_endpoint
+                )
+            else:
+                self.client = OpenAI(
+                    api_key=self.user_llm_config.chat_api_key,
+                    base_url=self.user_llm_config.chat_endpoint,
+                )
         self._top_p_adjusted = False  # Flag to track if top_p has been adjusted
 
     def _fix_top_p_param(self, error_message: str) -> bool:
@@ -441,11 +450,19 @@ class ShadeMerger:
             self.client = None
             self.model_name = None
         else:
-            self.client = OpenAI(
-                api_key=self.user_llm_config.chat_api_key,
-                base_url=self.user_llm_config.chat_endpoint,
-            )
             self.model_name = self.user_llm_config.chat_model_name
+            
+            if self.user_llm_config.provider_type == 'gemini':
+                logger.info("Initializing Gemini client for ShadeMerger")
+                self.client = GeminiClient(
+                    api_key=self.user_llm_config.chat_api_key,
+                    base_url=self.user_llm_config.chat_endpoint
+                )
+            else:
+                self.client = OpenAI(
+                    api_key=self.user_llm_config.chat_api_key,
+                    base_url=self.user_llm_config.chat_endpoint,
+                )
         
         self.model_params = {
             "temperature": 0,
@@ -659,6 +676,11 @@ class ShadeMerger:
             response = self._call_llm_with_retry(merge_decision_message)
             content = response.choices[0].message.content
             logger.info(f"Shade Merge Decision Result: {content}")
+
+            # Handle empty response from LLM
+            if not content or not content.strip():
+                logger.warning("Empty response from LLM in merge_shades, returning empty merge list")
+                return ShadeMergeResponse(merge_result=[], success=True)
 
             try:
                 merge_shade_list = self.__parse_json_response(content, r"\[.*\]")

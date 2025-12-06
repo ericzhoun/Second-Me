@@ -1,65 +1,126 @@
+"""
+Google Gemini API client adapter that provides an OpenAI-compatible interface.
+Uses the official google-generativeai Python SDK.
+"""
+
 import google.generativeai as genai
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 import logging
 import time
 import uuid
-from typing import List, Dict, Any, Optional, Union, Iterator
+from typing import List, Dict, Any, Optional, Iterator
 
 logger = logging.getLogger(__name__)
+
+# Default Gemini model to use if an invalid model is provided
+DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
+
 
 class GeminiClient:
     """
     Adapter for Google Gemini API to mimic OpenAI client interface.
+    Uses the official google-generativeai SDK.
     """
+    
     def __init__(self, api_key: str, base_url: Optional[str] = None):
+        """
+        Initialize the Gemini client.
+        
+        Args:
+            api_key: Google AI API key
+            base_url: Optional base URL (not used by Gemini SDK, kept for compatibility)
+        """
         if not api_key:
             raise ValueError("API key is required for GeminiClient")
+        
+        # Configure the Gemini API with the provided key
         genai.configure(api_key=api_key)
-        self.base_url = base_url or "https://generativelanguage.googleapis.com"
-        self.chat = self.Chat(self)
+        self.api_key = api_key
+        self.base_url = base_url
+        
+        # Create the chat interface to mimic OpenAI structure
+        self.chat = self._ChatNamespace(self)
+        
+        # Safety settings - set to minimum blocking for flexibility
+        self.safety_settings = {
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+        }
 
-    class Chat:
-        def __init__(self, client):
+    class _ChatNamespace:
+        """Namespace class to mimic OpenAI's client.chat structure."""
+        
+        def __init__(self, client: 'GeminiClient'):
             self.client = client
-            self.completions = self.Completions(client)
+            self.completions = self._CompletionsNamespace(client)
 
-        class Completions:
-            def __init__(self, client):
+        class _CompletionsNamespace:
+            """Namespace class to mimic OpenAI's client.chat.completions structure."""
+            
+            def __init__(self, client: 'GeminiClient'):
                 self.client = client
 
             def create(self, **kwargs) -> Any:
+                """Create a chat completion, mimicking OpenAI's interface."""
                 return self.client._create_completion(**kwargs)
 
-    def _convert_messages(self, messages: List[Dict[str, str]]) -> List[Dict[str, Any]]:
-        """Convert OpenAI messages to Gemini history format."""
-        gemini_history = []
+    def _validate_model_name(self, model: str) -> str:
+        """
+        Validate and normalize the model name for Gemini API.
+        
+        Args:
+            model: The model name provided
+            
+        Returns:
+            A valid Gemini model name
+        """
+        if not model:
+            logger.warning(f"No model specified, using default: {DEFAULT_GEMINI_MODEL}")
+            return DEFAULT_GEMINI_MODEL
+        
+        # Check if it's a valid Gemini model name
+        model_lower = model.lower()
+        if "gemini" not in model_lower:
+            logger.warning(f"Non-Gemini model name '{model}' provided. Using default: {DEFAULT_GEMINI_MODEL}")
+            return DEFAULT_GEMINI_MODEL
+        
+        # Remove 'models/' prefix if present (SDK adds it automatically)
+        if model.startswith("models/"):
+            model = model[7:]
+        
+        return model
+
+    def _convert_messages_to_contents(self, messages: List[Dict[str, str]]) -> tuple:
+        """
+        Convert OpenAI-format messages to Gemini format.
+        
+        Args:
+            messages: List of messages in OpenAI format
+            
+        Returns:
+            Tuple of (contents_list, system_instruction)
+        """
         system_instruction = None
-
-        # Extract system prompt if present (Gemini supports system_instruction at model init)
-        # However, generate_content doesn't support system_instruction per call easily unless we use beta or specific models.
-        # Standard approach: Merge system prompt into first user message or use system_instruction if model supports it.
-        # For simplicity and broad support, we can prepend system prompt.
-        # UPDATE: Gemini 1.5 Pro/Flash supports system_instruction.
-
-        # Let's separate system messages
-        system_messages = [m for m in messages if m.get("role") == "system"]
-        if system_messages:
-            system_instruction = "\n".join([m.get("content", "") for m in system_messages])
-
-        # Process user/assistant messages
-        # Gemini expects 'user' role as 'user' and 'assistant' as 'model'.
+        contents = []
+        
         for msg in messages:
-            role = msg.get("role")
-            content = msg.get("content")
-
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            
             if role == "system":
-                continue # Handled separately
-
-            if role == "user":
-                gemini_history.append({"role": "user", "parts": [content]})
+                # Accumulate system messages into system_instruction
+                if system_instruction:
+                    system_instruction += "\n" + content
+                else:
+                    system_instruction = content
+            elif role == "user":
+                contents.append({"role": "user", "parts": [content]})
             elif role == "assistant":
-                gemini_history.append({"role": "model", "parts": [content]})
-
-        return gemini_history, system_instruction
+                contents.append({"role": "model", "parts": [content]})
+        
+        return contents, system_instruction
 
     def _create_completion(
         self,
@@ -68,81 +129,111 @@ class GeminiClient:
         stream: bool = False,
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
+        top_p: Optional[float] = None,
         **kwargs
     ) -> Any:
+        """
+        Create a chat completion using Gemini API.
+        
+        Args:
+            messages: List of messages in OpenAI format
+            model: Model name to use
+            stream: Whether to stream the response
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens in response
+            top_p: Top-p sampling parameter
+            **kwargs: Additional parameters (ignored for compatibility)
+            
+        Returns:
+            OpenAI-compatible response object
+        """
         try:
-            # Handle model name (remove 'models/' prefix if present twice or ensure it matches Gemini format)
-            # Gemini models are usually "models/gemini-1.5-flash" or just "gemini-1.5-flash"
-            # If user provides "models/lpm", we might need to fallback or trust config.
-            # Assuming config provides valid Gemini model name.
-
-            # Convert messages
-            history, system_instruction = self._convert_messages(messages)
-
-            # Configure model
-            generation_config = genai.types.GenerationConfig(
-                temperature=temperature,
-                max_output_tokens=max_tokens
-            )
-
+            # Validate and normalize model name
+            model = self._validate_model_name(model)
+            
+            # Convert messages to Gemini format
+            contents, system_instruction = self._convert_messages_to_contents(messages)
+            
+            # Validate we have content to send
+            if not contents:
+                raise ValueError("No user/assistant messages provided")
+            
+            # Get the last user message as the prompt
+            if contents[-1]["role"] == "user":
+                prompt = contents[-1]["parts"][0]
+                history = contents[:-1] if len(contents) > 1 else []
+            else:
+                # If last message is from model, we need a user prompt
+                prompt = " "  # Placeholder
+                history = contents
+            
+            # Validate prompt is not empty
+            if not prompt or not str(prompt).strip():
+                logger.warning("Empty prompt detected, using placeholder")
+                prompt = "(No content provided)"
+            
+            # Build generation config
+            generation_config = {
+                "temperature": temperature,
+            }
+            if max_tokens:
+                generation_config["max_output_tokens"] = max_tokens
+            if top_p is not None and top_p > 0:
+                generation_config["top_p"] = top_p
+            
+            # Create the model instance
             gemini_model = genai.GenerativeModel(
                 model_name=model,
                 system_instruction=system_instruction,
-                generation_config=generation_config
+                generation_config=generation_config,
+                safety_settings=self.safety_settings
             )
-
-            # Prepare chat or content generation
-            # If history is empty (only system prompt?), sending empty content might fail.
-            # If history has only one user message, use generate_content.
-            # If history has multiple, use start_chat.
-
-            if not history:
-                # Should not happen in valid chat
-                raise ValueError("No user/model messages provided")
-
-            last_message = history[-1]
-            if last_message["role"] != "user":
-                # OpenAI allows last message to be assistant (to continue?), Gemini expects user prompt last?
-                # Actually generate_content takes content.
-                # If we use chat, we need history + current message.
-                pass
-
-            # We will use start_chat for history support
-            # Pop the last message as the new prompt
-            if history and history[-1]["role"] == "user":
-                prompt = history[-1]["parts"][0]
-                chat_history = history[:-1]
-            else:
-                # Fallback if last message is not user (e.g. continue generation? Not fully supported here)
-                prompt = " " # Empty prompt?
-                chat_history = history
-
-            chat_session = gemini_model.start_chat(history=chat_history)
-
-            response = chat_session.send_message(prompt, stream=stream)
-
+            
+            # Start chat session with history
+            chat = gemini_model.start_chat(history=history)
+            
+            # Send message
             if stream:
+                response = chat.send_message(prompt, stream=True)
                 return self._stream_response_adapter(response, model)
             else:
+                response = chat.send_message(prompt)
                 return self._response_adapter(response, model)
-
+                
         except Exception as e:
             logger.error(f"Gemini API error: {str(e)}")
             raise
 
-    def _response_adapter(self, response, model):
-        """Adapt Gemini response to OpenAI format object."""
-        # Wait for response completion
+    def _response_adapter(self, response, model: str) -> 'OpenAIResponse':
+        """
+        Adapt Gemini response to OpenAI format.
+        
+        Args:
+            response: Gemini response object
+            model: Model name used
+            
+        Returns:
+            OpenAI-compatible response object
+        """
+        text = ""
+        finish_reason = "stop"
+        
         try:
+            # Try to get text from response
             text = response.text
-        except ValueError:
-            # Blocked content?
-            text = ""
-            if response.prompt_feedback:
-                logger.warning(f"Gemini prompt feedback: {response.prompt_feedback}")
-
+        except ValueError as e:
+            # Content might be blocked
+            logger.warning(f"Could not get response text: {str(e)}")
+            finish_reason = "content_filter"
+        
+        # Log additional info if response is empty or blocked
+        if not text:
+            logger.warning("Gemini returned empty response")
+            self._log_response_details(response)
+        
+        # Build OpenAI-compatible response
         return OpenAIResponse({
-            "id": f"chatcmpl-{uuid.uuid4()}",
+            "id": f"chatcmpl-{uuid.uuid4().hex[:24]}",
             "object": "chat.completion",
             "created": int(time.time()),
             "model": model,
@@ -150,44 +241,51 @@ class GeminiClient:
                 "index": 0,
                 "message": OpenAIMessage({
                     "role": "assistant",
-                    "content": text
+                    "content": text or ""
                 }),
-                "finish_reason": "stop"
+                "finish_reason": finish_reason
             }],
             "usage": {
-                "prompt_tokens": 0, # Not easily available
+                "prompt_tokens": 0,
                 "completion_tokens": 0,
                 "total_tokens": 0
             }
         })
 
-    def _stream_response_adapter(self, response_iterator, model):
-        """Yield OpenAI-format chunks from Gemini stream."""
-        response_id = f"chatcmpl-{uuid.uuid4()}"
+    def _stream_response_adapter(self, response_iterator, model: str) -> Iterator['OpenAIResponse']:
+        """
+        Adapt Gemini streaming response to OpenAI format.
+        
+        Args:
+            response_iterator: Gemini streaming response
+            model: Model name used
+            
+        Yields:
+            OpenAI-compatible streaming response chunks
+        """
+        response_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
         created = int(time.time())
 
         for chunk in response_iterator:
-            text = ""
             try:
                 text = chunk.text
+                if text:
+                    yield OpenAIResponse({
+                        "id": response_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": model,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {"content": text},
+                            "finish_reason": None
+                        }]
+                    })
             except ValueError:
+                # Skip chunks that can't be read
                 continue
 
-            yield OpenAIResponse({
-                "id": response_id,
-                "object": "chat.completion.chunk",
-                "created": created,
-                "model": model,
-                "choices": [{
-                    "index": 0,
-                    "delta": {
-                        "content": text
-                    },
-                    "finish_reason": None
-                }]
-            })
-
-        # Yield finish reason
+        # Final chunk with finish reason
         yield OpenAIResponse({
             "id": response_id,
             "object": "chat.completion.chunk",
@@ -200,21 +298,50 @@ class GeminiClient:
             }]
         })
 
-class OpenAIResponse(dict):
-    """Helper to allow dot access to dictionary."""
-    def __init__(self, data):
-        super().__init__(data)
-        for k, v in data.items():
-            if isinstance(v, dict):
-                self[k] = OpenAIResponse(v)
-            elif isinstance(v, list):
-                self[k] = [OpenAIResponse(i) if isinstance(i, dict) else i for i in v]
+    def _log_response_details(self, response) -> None:
+        """Log detailed information about a Gemini response for debugging."""
+        try:
+            if hasattr(response, 'prompt_feedback') and response.prompt_feedback:
+                logger.warning(f"Prompt feedback: {response.prompt_feedback}")
+            
+            if hasattr(response, 'candidates') and response.candidates:
+                for i, candidate in enumerate(response.candidates):
+                    finish_reason = getattr(candidate, 'finish_reason', 'unknown')
+                    logger.warning(f"Candidate {i} finish_reason: {finish_reason}")
+                    
+                    if hasattr(candidate, 'safety_ratings') and candidate.safety_ratings:
+                        for rating in candidate.safety_ratings:
+                            logger.warning(f"  Safety: {rating.category.name} = {rating.probability.name}")
+        except Exception as e:
+            logger.debug(f"Could not log response details: {e}")
 
-    def __getattr__(self, key):
+class OpenAIResponse(dict):
+    """
+    Helper class that allows both dict-style and attribute-style access.
+    Mimics OpenAI response object structure.
+    """
+    
+    def __init__(self, data: dict):
+        super().__init__(data)
+        for key, value in data.items():
+            if isinstance(value, dict):
+                self[key] = OpenAIResponse(value)
+            elif isinstance(value, list):
+                self[key] = [
+                    OpenAIResponse(item) if isinstance(item, dict) else item
+                    for item in value
+                ]
+
+    def __getattr__(self, key: str) -> Any:
         try:
             return self[key]
         except KeyError:
-            raise AttributeError(key)
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{key}'")
+
+    def __setattr__(self, key: str, value: Any) -> None:
+        self[key] = value
+
 
 class OpenAIMessage(OpenAIResponse):
+    """Message class for OpenAI compatibility."""
     pass

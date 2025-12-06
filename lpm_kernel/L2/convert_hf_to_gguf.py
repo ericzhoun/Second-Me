@@ -2654,6 +2654,7 @@ class QwenModel(Model):
 
 
 @Model.register("Qwen2ForCausalLM")
+@Model.register("Qwen3ForCausalLM")
 class Qwen2Model(Model):
     model_arch = gguf.MODEL_ARCH.QWEN2
 
@@ -2677,6 +2678,34 @@ class Qwen2Model(Model):
                 self.gguf_writer.add_rope_scaling_orig_ctx_len(
                     self.hparams["rope_scaling"]["original_max_position_embeddings"]
                 )
+
+    def generate_extra_tensors(self) -> Iterable[tuple[str, Tensor]]:
+        yield from super().generate_extra_tensors()
+
+        # Some Qwen3 checkpoints masquerade as Qwen2 but ship without attention
+        # biases. When llama.cpp loads a Qwen2 GGUF it expects those tensors, so
+        # synthesize them here if the config explicitly disables biases.
+        if self.hparams.get("attention_bias", True):
+            return
+
+        hidden_size = self.hparams["hidden_size"]
+        num_heads = self.hparams["num_attention_heads"]
+        head_dim = self.hparams.get("head_dim", hidden_size // num_heads)
+        kv_dim = head_dim * self.hparams.get("num_key_value_heads", num_heads)
+        logger.info(
+            "gguf: synthesizing zero attention biases for Qwen2-compatible export"
+        )
+
+        hf_bias_plan: tuple[tuple[str, int], ...] = (
+            ("model.layers.{bid}.self_attn.q_proj.bias", hidden_size),
+            ("model.layers.{bid}.self_attn.k_proj.bias", kv_dim),
+            ("model.layers.{bid}.self_attn.v_proj.bias", kv_dim),
+            ("model.layers.{bid}.self_attn.o_proj.bias", hidden_size),
+        )
+
+        for bid in range(self.block_count):
+            for template, size in hf_bias_plan:
+                yield template.format(bid=bid), torch.zeros(size, dtype=torch.float32)
 
 
 @Model.register("Qwen2VLForConditionalGeneration")

@@ -9,6 +9,7 @@ import traceback
 from openai import OpenAI
 import tiktoken
 
+from lpm_kernel.common.gemini_client import GeminiClient
 from lpm_kernel.api.services.user_llm_config_service import UserLLMConfigService
 from lpm_kernel.configs.config import Config
 from lpm_kernel.L0.models import InsighterInput, SummarizerInput
@@ -61,10 +62,17 @@ class L0Generator:
             self.client = None
             self.model_name = None
         else:
-            self.client = OpenAI(
-                api_key=self.user_llm_config.chat_api_key,
-                base_url=self.user_llm_config.chat_endpoint,
-            )
+            if self.user_llm_config.provider_type == 'gemini':
+                logger.info("Initializing Gemini client for L0 generation")
+                self.client = GeminiClient(
+                    api_key=self.user_llm_config.chat_api_key,
+                    base_url=self.user_llm_config.chat_endpoint
+                )
+            else:
+                self.client = OpenAI(
+                    api_key=self.user_llm_config.chat_api_key,
+                    base_url=self.user_llm_config.chat_endpoint,
+                )
             self.model_name = self.user_llm_config.chat_model_name
         
 
@@ -437,10 +445,16 @@ class L0Generator:
 
             if self.model_name is None:
                 self.user_llm_config = self.user_llm_config_service.get_available_llm()
-                self.client = OpenAI(
-                    api_key=self.user_llm_config.chat_api_key,
-                    base_url=self.user_llm_config.chat_endpoint,
-                )
+                if self.user_llm_config.provider_type == 'gemini':
+                    self.client = GeminiClient(
+                        api_key=self.user_llm_config.chat_api_key,
+                        base_url=self.user_llm_config.chat_endpoint
+                    )
+                else:
+                    self.client = OpenAI(
+                        api_key=self.user_llm_config.chat_api_key,
+                        base_url=self.user_llm_config.chat_endpoint,
+                    )
                 self.model_name = self.user_llm_config.chat_model_name
 
             spliter = TokenTextSplitter(
@@ -765,10 +779,16 @@ class L0Generator:
             )
             if self.model_name is None:
                 self.user_llm_config = self.user_llm_config_service.get_available_llm()
-                self.client = OpenAI(
-                    api_key=self.user_llm_config.chat_api_key,
-                    base_url=self.user_llm_config.chat_endpoint,
-                )
+                if self.user_llm_config.provider_type == 'gemini':
+                    self.client = GeminiClient(
+                        api_key=self.user_llm_config.chat_api_key,
+                        base_url=self.user_llm_config.chat_endpoint
+                    )
+                else:
+                    self.client = OpenAI(
+                        api_key=self.user_llm_config.chat_api_key,
+                        base_url=self.user_llm_config.chat_endpoint,
+                    )
                 self.model_name = self.user_llm_config.chat_model_name
 
             requests.append(

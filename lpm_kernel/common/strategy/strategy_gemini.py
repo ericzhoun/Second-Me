@@ -32,11 +32,17 @@ def gemini_strategy(user_llm_config: UserLLMConfigDTO, chunked_texts: List[str])
         genai.configure(api_key=api_key)
 
         # Get model name, default to text-embedding-004 if not specified
+        # Valid Gemini embedding models: text-embedding-004, embedding-001
         model_name = user_llm_config.embedding_model_name
-        if not model_name:
+        
+        # Check if it's a valid Gemini embedding model, otherwise use default
+        valid_gemini_models = ["text-embedding-004", "embedding-001", "models/text-embedding-004", "models/embedding-001"]
+        if not model_name or model_name not in valid_gemini_models and not model_name.startswith("models/text-embedding") and not model_name.startswith("models/embedding"):
+            # Not a Gemini model (e.g., text-embedding-ada-002 is OpenAI), use default
+            logger.info(f"Model '{model_name}' is not a Gemini embedding model, using default 'text-embedding-004'")
             model_name = "models/text-embedding-004"
         elif not model_name.startswith("models/"):
-             model_name = f"models/{model_name}"
+            model_name = f"models/{model_name}"
 
         embeddings_list = []
 
