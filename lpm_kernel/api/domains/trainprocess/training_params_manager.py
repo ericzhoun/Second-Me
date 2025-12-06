@@ -18,7 +18,7 @@ class TrainingParamsManager:
     
     # Default training parameters
     _default_training_params = {
-        "model_name": "Qwen2.5-0.5B-Instruct",
+        "model_name": "Qwen2.5-7B-Instruct",
         "learning_rate": 1e-4,
         "number_of_epochs": 3,
         "concurrency_threads": 2,

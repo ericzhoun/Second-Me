@@ -21,7 +21,7 @@ def main():
     parser.add_argument(
         "--model-name",
         type=str,
-        default="Qwen3-8B",
+        default="Qwen2.5-7B-Instruct",
         help="Model name (must match training output folder)",
     )
     args = parser.parse_args()

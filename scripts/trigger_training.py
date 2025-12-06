@@ -15,7 +15,7 @@ def download_model_from_hf(hf_model_id: str, local_model_name: str) -> str:
     Download model from Hugging Face and set up in base_models directory.
     
     Args:
-        hf_model_id: HuggingFace model ID (e.g., "Qwen/Qwen3-0.6B")
+        hf_model_id: HuggingFace model ID (e.g., "Qwen/Qwen2.5-7B-Instruct")
         local_model_name: Local folder name for the model
         
     Returns:
@@ -77,9 +77,9 @@ def direct_lora_training():
 
     # --- Model Configuration ---
     # HuggingFace model ID and local folder name
-    # Using Qwen3-8B for efficient LoRA fine-tuning
-    HF_MODEL_ID = "Qwen/Qwen3-8B"
-    LOCAL_MODEL_NAME = "Qwen3-8B"
+    # Using Qwen2.5-7B-Instruct for high-quality LoRA fine-tuning
+    HF_MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"
+    LOCAL_MODEL_NAME = "Qwen2.5-7B-Instruct"
     
     logger.info(f"Preparing LoRA fine-tuning for: {HF_MODEL_ID}")
     logger.info("This model requires trust_remote_code=True to load custom modeling code")

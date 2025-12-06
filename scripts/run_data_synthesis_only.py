@@ -21,7 +21,7 @@ def main():
     # Get training parameters
     params_manager = TrainingParamsManager()
     training_params = params_manager.get_latest_training_params()
-    model_name = training_params.get("model_name", "Qwen3-8B")
+    model_name = training_params.get("model_name", "Qwen2.5-7B-Instruct")
     
     logger.info(f"Starting data synthesis for model: {model_name}")
     

@@ -210,11 +210,28 @@ class LocalLLMService:
             
             # Check if process is still running
             if process.poll() is None:
+                stdout_snapshot, stderr_snapshot = None, None
+                try:
+                    stdout_snapshot = process.stdout.peek().decode("utf-8", errors="replace") if process.stdout else ""
+                    stderr_snapshot = process.stderr.peek().decode("utf-8", errors="replace") if process.stderr else ""
+                except Exception:
+                    logger.debug("Unable to peek llama-server output streams", exc_info=True)
+                if stdout_snapshot:
+                    logger.debug("llama-server stdout (preview): %s", stdout_snapshot[-500:])
+                if stderr_snapshot:
+                    logger.debug("llama-server stderr (preview): %s", stderr_snapshot[-500:])
+                log_dir = os.path.join(base_dir, "logs")
+                os.makedirs(log_dir, exist_ok=True)
+                log_path = os.path.join(log_dir, "llama_server_start.log")
+                with open(log_path, "a", encoding="utf-8") as log_file:
+                    log_file.write(f"\n=== Start attempt at {datetime.now().isoformat()} ===\n")
+                    log_file.write("Command: " + " ".join(cmd) + "\n")
+                    if stdout_snapshot:
+                        log_file.write("STDOUT:\n" + stdout_snapshot + "\n")
+                    if stderr_snapshot:
+                        log_file.write("STDERR:\n" + stderr_snapshot + "\n")
+                logger.info(f"LLama server started successfully with GPU acceleration{gpu_info}" if cuda_available and use_gpu else "LLama server started successfully in CPU-only mode")
                 # Log initialization success
-                if cuda_available and use_gpu:
-                    logger.info(f"✅ LLama server started successfully with GPU acceleration{gpu_info}")
-                else:
-                    logger.info("✅ LLama server started successfully in CPU-only mode")
                 return True
             else:
                 stdout, stderr = process.communicate()

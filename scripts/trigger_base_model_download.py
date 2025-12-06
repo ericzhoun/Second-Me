@@ -22,13 +22,13 @@ def main():
     parser.add_argument(
         "--model-name",
         type=str,
-        default="Qwen3-8B",
+        default="Qwen2.5-7B-Instruct",
         help="Model identifier to download (used for progress tracking and local folder name)",
     )
     parser.add_argument(
         "--hf-model-id",
         type=str,
-        default="Qwen3-8B",
+        default="Qwen2.5-7B-Instruct",
         help="Hugging Face repo id or short name (save_hf_model prefixes 'Qwen/'). If you pass 'org/name', we will strip the org to avoid double prefixing.",
     )
     parser.add_argument(

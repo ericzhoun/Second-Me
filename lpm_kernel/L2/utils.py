@@ -688,11 +688,11 @@ def save_hf_model(model_name=None, log_file_path=None) -> str:
             config = Config()
             model_name = config.get("training", {}).get("model_name")
             if not model_name:
-                logger.warning("No model name provided and none found in config. Using Qwen3-8B as fallback.")
-                model_name = "Qwen3-8B"
+                logger.warning("No model name provided and none found in config. Using Qwen2.5-7B-Instruct as fallback.")
+                model_name = "Qwen2.5-7B-Instruct"
         except Exception as e:
-            logger.warning(f"Failed to get model name from config: {str(e)}. Using Qwen3-8B as fallback.")
-            model_name = "Qwen3-8B"
+            logger.warning(f"Failed to get model name from config: {str(e)}. Using Qwen2.5-7B-Instruct as fallback.")
+            model_name = "Qwen2.5-7B-Instruct"
     
     base_dir = os.path.join(os.getcwd(), "resources/L2/base_models")
     # Normalize model name and check for path traversal attempts
