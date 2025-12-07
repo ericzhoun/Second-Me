@@ -133,6 +133,11 @@ class TrainProcessService:
             documents = self.list_documents() 
             for doc in documents:
                 doc_id = doc.get("id")
+                
+                # Check if already embedded
+                if doc.get("embedding_status") == "SUCCESS":
+                    logger.info(f"Skipping document {doc_id}, already embedded")
+                    continue
 
                 # Directly call document service instead of API
                 embedding = document_service.process_document_embedding(doc_id)
@@ -142,8 +147,9 @@ class TrainProcessService:
                     )
                     self.progress.mark_step_status(ProcessStep.GENERATE_DOCUMENT_EMBEDDINGS, Status.FAILED)
                     return False
-                self.progress.mark_step_status(ProcessStep.GENERATE_DOCUMENT_EMBEDDINGS, Status.COMPLETED)
                 logger.info(f"Successfully generated embedding for document {doc_id}") 
+            
+            self.progress.mark_step_status(ProcessStep.GENERATE_DOCUMENT_EMBEDDINGS, Status.COMPLETED)
             return True
         except Exception as e:
             logger.error(f"Generate document embeddings failed: {str(e)}")
@@ -218,6 +224,16 @@ class TrainProcessService:
                     self.progress.mark_step_status(ProcessStep.CHUNK_EMBEDDING, Status.FAILED)
                     return False
             # All documents' chunks processed successfully
+            # Sync database with ChromaDB to ensure has_embedding flags are correct
+            logger.info("Syncing chunk embedding status from ChromaDB to database...")
+            try:
+                sync_stats = document_service.sync_chunk_embeddings_from_chromadb()
+                logger.info(f"Sync completed: {sync_stats['synced_to_true']} chunks synced to True, "
+                           f"{sync_stats['already_correct']} already correct")
+            except Exception as e:
+                logger.error(f"Error syncing chunk embeddings: {str(e)}")
+                # Don't fail the step if sync fails, log and continue
+            
             self.progress.mark_step_status(ProcessStep.CHUNK_EMBEDDING, Status.COMPLETED)
             return True
         except Exception as e:

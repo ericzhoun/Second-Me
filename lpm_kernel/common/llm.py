@@ -1,4 +1,4 @@
-from lpm_kernel.api.services.user_llm_config_service import UserLLMConfigService
+
 from lpm_kernel.configs.config import Config
 from typing import List, Union
 import requests
@@ -19,6 +19,7 @@ class LLMClient:
     """LLM client utility class"""
 
     def __init__(self):
+        from lpm_kernel.api.services.user_llm_config_service import UserLLMConfigService
         self.config = Config.from_env()
         self.user_llm_config_service = UserLLMConfigService()
         self.embedding_max_text_length = int(self.config.get('EMBEDDING_MAX_TEXT_LENGTH', 8000))
