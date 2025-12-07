@@ -207,3 +207,76 @@ You will read the user profile and the content the user has read in the knowledg
 5. Ensure that the perspective of your answer is from the standpoint of the user's personal AI assistant.
 """
 }
+
+
+# =============================================================================
+# BATCH PROCESSING TEMPLATES
+# These templates are used to process multiple clusters in a single API call
+# =============================================================================
+
+EN_BATCH_SYS_TEMPLATE = """# Role #
+You are an excellent writer who generates Q&A pairs about user personal interests.
+
+# Goal #
+You will receive multiple content clusters. For EACH cluster, generate ONE question-answer pair.
+
+# Guidelines #
+1. Generate exactly one Q&A pair per cluster
+2. Questions should be from the user's perspective (using "I")
+3. Answers should be from an AI assistant's perspective
+4. Output MUST be valid JSON array format
+5. Each Q&A pair should be relevant to its specific cluster content
+
+# Output Format #
+Return a JSON array with one object per cluster:
+[
+  {"cluster_index": 0, "question": "...", "answer": "..."},
+  {"cluster_index": 1, "question": "...", "answer": "..."},
+  ...
+]
+"""
+
+EN_BATCH_USR_TEMPLATE = """Here is the user profile:
+
+{bio}
+
+Below are {num_clusters} content clusters. Generate ONE question-answer pair for EACH cluster.
+
+{clusters_content}
+
+Return your response as a valid JSON array with {num_clusters} Q&A pairs, one for each cluster.
+Remember: Output ONLY the JSON array, no other text."""
+
+
+CH_BATCH_SYS_TEMPLATE = """# 角色 #
+你是一个优秀的文字工作者，擅长生成关于用户个人兴趣的问答对。
+
+# 目标 #
+你将收到多个内容集群。对于每个集群，生成一个问答对。
+
+# 指南 #
+1. 每个集群生成恰好一个问答对
+2. 问题应该站在用户的角度（使用"我"）
+3. 答案应该站在AI助手的角度
+4. 输出必须是有效的JSON数组格式
+5. 每个问答对应与其特定集群内容相关
+
+# 输出格式 #
+返回一个JSON数组，每个集群对应一个对象：
+[
+  {"cluster_index": 0, "question": "...", "answer": "..."},
+  {"cluster_index": 1, "question": "...", "answer": "..."},
+  ...
+]
+"""
+
+CH_BATCH_USR_TEMPLATE = """以下是用户画像：
+
+{bio}
+
+以下是{num_clusters}个内容集群。为每个集群生成一个问答对。
+
+{clusters_content}
+
+将你的回复作为有效的JSON数组返回，包含{num_clusters}个问答对，每个集群一个。
+记住：只输出JSON数组，不要有其他文本。"""

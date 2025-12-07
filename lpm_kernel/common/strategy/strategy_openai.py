@@ -1,13 +1,15 @@
-from typing import Optional
+from __future__ import annotations
+from typing import Optional, TYPE_CHECKING
 import numpy as np
-from lpm_kernel.api.dto.user_llm_config_dto import (
-    UserLLMConfigDTO,
-)
 from lpm_kernel.configs.logging import get_train_process_logger
-logger = get_train_process_logger()
 import requests
 
-def openai_strategy(user_llm_config: Optional[UserLLMConfigDTO], chunked_texts):
+if TYPE_CHECKING:
+    from lpm_kernel.api.dto.user_llm_config_dto import UserLLMConfigDTO
+
+logger = get_train_process_logger()
+
+def openai_strategy(user_llm_config: Optional["UserLLMConfigDTO"], chunked_texts):
     try:
         headers = {
             "Authorization": f"Bearer {user_llm_config.embedding_api_key}",

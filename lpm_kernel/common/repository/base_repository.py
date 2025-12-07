@@ -48,7 +48,7 @@ class BaseRepository(Generic[T]):
                 session.rollback()
                 raise
 
-    def list(self, filters: dict = None, limit: int = 100, offset: int = 0) -> List[T]:
+    def list(self, filters: dict = None, limit: int = 10000, offset: int = 0) -> List[T]:
         with self._db.session() as session:
             try:
                 query = select(self.model)

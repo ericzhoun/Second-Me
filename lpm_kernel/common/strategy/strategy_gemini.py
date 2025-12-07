@@ -1,13 +1,16 @@
-from lpm_kernel.api.dto.user_llm_config_dto import UserLLMConfigDTO
+from __future__ import annotations
+from typing import List, Union, TYPE_CHECKING
 from lpm_kernel.configs.logging import get_train_process_logger
 import google.generativeai as genai
 import os
 import numpy as np
-from typing import List, Union
+
+if TYPE_CHECKING:
+    from lpm_kernel.api.dto.user_llm_config_dto import UserLLMConfigDTO
 
 logger = get_train_process_logger()
 
-def gemini_strategy(user_llm_config: UserLLMConfigDTO, chunked_texts: List[str]) -> np.ndarray:
+def gemini_strategy(user_llm_config: "UserLLMConfigDTO", chunked_texts: List[str]) -> np.ndarray:
     """
     Generate embeddings using Google Gemini API
 

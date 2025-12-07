@@ -606,10 +606,39 @@ def create_chat_data(data_args, tokenizer):
         return [{"content": tokenizer.apply_chat_template(messages, tokenize=False)}]
     
     dataset = load_dataset("json", data_files=data_args.dataset_name, split="train")
+    print(f"DEBUG: load_dataset returned {len(dataset)} items from {data_args.dataset_name}")
+    
     res_dataset = []
     
-    for case in dataset:
-        res_dataset.extend(preprocess(case, data_args.user_name, data_args.is_cot))
+    filtered_none = 0
+    filtered_text_none = 0
+    filtered_no_assistant = 0
+    success_count = 0
+    
+    for i, case in enumerate(dataset):
+        if i < 3:
+            print(f"DEBUG: Processing item {i}: keys={list(case.keys())}")
+            
+        processed = preprocess(case, data_args.user_name, data_args.is_cot)
+        if not processed:
+            if case.get('assistant') is None and case.get('enhanced_request') is None and case.get('user_feedback') is None:
+                filtered_no_assistant += 1
+            elif case.get('assistant') is not None and 'None' in case['assistant']:
+                filtered_text_none += 1
+            else:
+                filtered_none += 1
+                if i < 10:
+                    print(f"DEBUG: Item {i} filtered out for unknown reason. Content: {str(case)[:100]}...")
+        else:
+            success_count += 1
+            res_dataset.extend(processed)
+    
+    print(f"DEBUG: Validation Report:")
+    print(f"  Input size: {len(dataset)}")
+    print(f"  Success: {success_count}")
+    print(f"  Filtered (No Assistant/Feedback): {filtered_no_assistant}")
+    print(f"  Filtered ('None' in text): {filtered_text_none}")
+    print(f"  Filtered (Other): {filtered_none}")
     
     res = Dataset.from_list(res_dataset)
     print(f"**************Dataset contains {res.num_rows} elements.**************")

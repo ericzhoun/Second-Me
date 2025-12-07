@@ -370,3 +370,225 @@ class PreferenceQAGenerator:
                 continue
             self.question_list.append({"user": gen_question, "assistant": gen_answer})
         return
+
+
+    def process_clusters_batch(self, output_filename: str, batch_size: int = 10) -> None:
+        """Process clusters in batches to reduce API calls.
+        
+        Instead of making 2 API calls per cluster (question + answer), this method
+        batches multiple clusters into a single request, asking the LLM to generate
+        Q&A pairs for all clusters at once.
+        
+        Args:
+            output_filename: Path to save the generated Q&A pairs.
+            batch_size: Number of clusters to process per API call. Default 10.
+                        Note: Gemini may return empty responses for large batches.
+                        Recommended: 5-15 for Gemini, 20-50 for other models.
+        """
+        from lpm_kernel.L2.data_pipeline.data_prep.preference.prompts import (
+            EN_BATCH_SYS_TEMPLATE, EN_BATCH_USR_TEMPLATE,
+            CH_BATCH_SYS_TEMPLATE, CH_BATCH_USR_TEMPLATE
+        )
+        
+        cluster_items = list(self.pre_msg.items())
+        
+        # === RESUME LOGIC: Load existing progress ===
+        processed_cluster_ids = set()
+        progress_file = output_filename + ".progress"
+        
+        # Load existing Q&A pairs if output file exists
+        if os.path.exists(output_filename):
+            try:
+                with open(output_filename, "r", encoding="utf-8") as f:
+                    existing_data = json.load(f)
+                    if isinstance(existing_data, list):
+                        self.question_list = existing_data
+                        logger.info(f"Loaded {len(existing_data)} existing Q&A pairs from {output_filename}")
+            except Exception as e:
+                logger.warning(f"Could not load existing output file: {e}")
+        
+        # Load processed cluster IDs from progress file
+        if os.path.exists(progress_file):
+            try:
+                with open(progress_file, "r", encoding="utf-8") as f:
+                    processed_cluster_ids = set(json.load(f))
+                    logger.info(f"Resuming: {len(processed_cluster_ids)} clusters already processed")
+            except Exception as e:
+                logger.warning(f"Could not load progress file: {e}")
+        
+        # Apply sampling based on data synthesis mode
+        if self.data_synthesis_mode == "low":
+            sample_num = max(1, len(cluster_items) // LowMode.cluster_nums.value) if 0 < len(cluster_items) < 3 else len(cluster_items) // LowMode.cluster_nums.value
+            cluster_items = random.sample(cluster_items, sample_num)
+        elif self.data_synthesis_mode == "medium":
+            sample_num = max(1, len(cluster_items) // MediumMode.cluster_nums.value) if 0 < len(cluster_items) < 2 else len(cluster_items) // MediumMode.cluster_nums.value
+            cluster_items = random.sample(cluster_items, sample_num)
+        
+        # Filter out already-processed clusters
+        remaining_clusters = [(cid, cluster) for cid, cluster in cluster_items if cid not in processed_cluster_ids]
+        skipped_count = len(cluster_items) - len(remaining_clusters)
+        
+        if skipped_count > 0:
+            logger.info(f"Skipping {skipped_count} already-processed clusters, {len(remaining_clusters)} remaining")
+        
+        if not remaining_clusters:
+            logger.info("All clusters already processed. Nothing to do.")
+            return
+        
+        # Select templates based on language
+        if self.preference_language == "Chinese":
+            batch_sys = CH_BATCH_SYS_TEMPLATE
+            batch_usr = CH_BATCH_USR_TEMPLATE
+        else:
+            batch_sys = EN_BATCH_SYS_TEMPLATE
+            batch_usr = EN_BATCH_USR_TEMPLATE
+        
+        total_clusters = len(remaining_clusters)
+        num_batches = (total_clusters + batch_size - 1) // batch_size
+        
+        logger.info(f"Processing {total_clusters} clusters in {num_batches} batches (batch_size={batch_size})")
+        
+        processed_count = 0
+        
+        for batch_idx in range(num_batches):
+            start_idx = batch_idx * batch_size
+            end_idx = min(start_idx + batch_size, total_clusters)
+            batch = remaining_clusters[start_idx:end_idx]
+            
+            # Track cluster IDs in this batch for progress saving
+            batch_cluster_ids = [cid for cid, _ in batch]
+            
+            # Build clusters content for prompt
+            clusters_content = ""
+            valid_clusters = []
+            
+            for i, (cluster_id, cluster) in enumerate(batch):
+                chunk_concat = self._get_chunk_concat(cluster["contents"])
+                if len(chunk_concat) < 20:
+                    continue
+                clusters_content += f"\n### Cluster {i} ###\n{chunk_concat}\n"
+                valid_clusters.append(i)
+            
+            if not valid_clusters:
+                logger.info(f"Batch {batch_idx + 1}/{num_batches}: No valid clusters, skipping")
+                continue
+            
+            # Build prompt
+            prompt = batch_usr.format(
+                bio=self.bio,
+                num_clusters=len(valid_clusters),
+                clusters_content=clusters_content
+            )
+            
+            logger.info(f"Batch {batch_idx + 1}/{num_batches}: Processing {len(valid_clusters)} clusters...")
+            
+            try:
+                response = self.generate_response(batch_sys, prompt)
+                
+                if response is None or response.strip() == "":
+                    logger.warning(f"Batch {batch_idx + 1}/{num_batches}: Empty response, falling back to individual processing")
+                    # Fallback: process this batch's clusters individually
+                    for cluster_id, cluster in batch:
+                        chunk_concat = self._get_chunk_concat(cluster["contents"])
+                        if len(chunk_concat) < 20:
+                            continue
+                        try:
+                            # Use original single-cluster processing
+                            gen_question = self.generate_response(
+                                self.sys_templates["query"],
+                                self.prompt_templates["query"].format(bio=self.bio, chunks_concat=chunk_concat)
+                            )
+                            if gen_question:
+                                gen_answer = self.generate_response(
+                                    self.sys_templates["answer"],
+                                    self.prompt_templates["answer"].format(
+                                        question=gen_question, bio=self.bio, chunks_concat=chunk_concat
+                                    )
+                                )
+                                if gen_answer:
+                                    self.question_list.append({"user": gen_question, "assistant": gen_answer})
+                                    processed_count += 1
+                        except Exception as e:
+                            logger.error(f"Individual fallback failed for cluster: {e}")
+                            continue
+                    continue
+                
+                # Parse JSON response
+                qa_pairs = self._parse_batch_response(response)
+                
+                if qa_pairs:
+                    for qa in qa_pairs:
+                        if "question" in qa and "answer" in qa:
+                            self.question_list.append({
+                                "user": qa["question"],
+                                "assistant": qa["answer"]
+                            })
+                            processed_count += 1
+                    
+                    logger.info(f"Batch {batch_idx + 1}/{num_batches}: Generated {len(qa_pairs)} Q&A pairs")
+                else:
+                    logger.warning(f"Batch {batch_idx + 1}/{num_batches}: Failed to parse response, trying smaller batch")
+                    
+            except Exception as e:
+                logger.error(f"Batch {batch_idx + 1}/{num_batches}: Error - {str(e)}")
+                logger.error(traceback.format_exc())
+                continue
+            
+            # === SAVE PROGRESS AFTER EACH BATCH ===
+            # Mark these clusters as processed
+            processed_cluster_ids.update(batch_cluster_ids)
+            
+            # Save Q&A pairs
+            with open(output_filename, "w", encoding="utf-8") as json_file:
+                json.dump(self.question_list, json_file, indent=4, ensure_ascii=False)
+            
+            # Save progress (processed cluster IDs)
+            with open(progress_file, "w", encoding="utf-8") as f:
+                json.dump(list(processed_cluster_ids), f)
+            
+            logger.info(f"Progress saved: {len(processed_cluster_ids)} clusters processed, {len(self.question_list)} Q&A pairs total")
+        
+        logger.info(f"Batch processing complete. Total Q&A pairs generated: {processed_count}")
+        
+        # Final save
+        with open(output_filename, "w", encoding="utf-8") as json_file:
+            json.dump(self.question_list, json_file, indent=4, ensure_ascii=False)
+
+
+    def _parse_batch_response(self, response: str) -> list:
+        """Parse the batch response to extract Q&A pairs.
+        
+        Args:
+            response: The raw response from the LLM.
+            
+        Returns:
+            List of dictionaries with 'question' and 'answer' keys.
+        """
+        try:
+            # Try to find JSON array in response
+            # First, try direct JSON parse
+            try:
+                return json.loads(response)
+            except json.JSONDecodeError:
+                pass
+            
+            # Try to extract JSON from markdown code blocks
+            json_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', response)
+            if json_match:
+                return json.loads(json_match.group(1))
+            
+            # Try to find array pattern
+            array_match = re.search(r'\[[\s\S]*\]', response)
+            if array_match:
+                return json.loads(array_match.group(0))
+            
+            logger.warning(f"Could not extract JSON from response: {response[:200]}...")
+            return []
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON parse error: {e}")
+            logger.error(f"Response snippet: {response[:500]}...")
+            return []
+        except Exception as e:
+            logger.error(f"Error parsing batch response: {e}")
+            return []

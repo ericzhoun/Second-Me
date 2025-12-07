@@ -59,7 +59,7 @@ class TopicsGenerator:
                     base_url=self.user_llm_config.chat_endpoint,
                 )
         logger.info(f"user_llm_config: {self.user_llm_config}")
-        self.threshold = 0.85
+        self.threshold = 0.5
         self._top_p_adjusted = False  # Flag to track if top_p has been adjusted
 
     def _fix_top_p_param(self, error_message: str) -> bool:

@@ -1,12 +1,13 @@
-from lpm_kernel.api.dto.user_llm_config_dto import (
-    UserLLMConfigDTO,
-)
-from typing import Optional
+from __future__ import annotations
+from typing import Optional, TYPE_CHECKING
 import lpm_kernel.common.strategy.strategy_openai as openai
 import lpm_kernel.common.strategy.strategy_huggingface as huggingface
 import lpm_kernel.common.strategy.strategy_gemini as gemini
 
-def strategy_classification(user_llm_config: Optional[UserLLMConfigDTO], chunked_texts):
+if TYPE_CHECKING:
+    from lpm_kernel.api.dto.user_llm_config_dto import UserLLMConfigDTO
+
+def strategy_classification(user_llm_config: Optional["UserLLMConfigDTO"], chunked_texts):
     if user_llm_config.provider_type == "gemini":
         # Using Gemini strategy to generate embedding vectors
         return gemini.gemini_strategy(user_llm_config, chunked_texts)
@@ -16,3 +17,4 @@ def strategy_classification(user_llm_config: Optional[UserLLMConfigDTO], chunked
     else:
         # Using openai strategy to generate embedding vectors
         return openai.openai_strategy(user_llm_config, chunked_texts)
+

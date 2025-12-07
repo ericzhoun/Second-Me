@@ -834,8 +834,23 @@ class DocumentService:
             raise
 
 
-# create service
-document_service = DocumentService()
+# Lazy initialization to avoid circular imports
+_document_service_instance = None
+
+def get_document_service():
+    """Get the document service singleton (lazy initialization)"""
+    global _document_service_instance
+    if _document_service_instance is None:
+        _document_service_instance = DocumentService()
+    return _document_service_instance
+
+# For backward compatibility - this is a lazy proxy
+class _DocumentServiceProxy:
+    """Lazy proxy for document_service to maintain backward compatibility"""
+    def __getattr__(self, name):
+        return getattr(get_document_service(), name)
+
+document_service = _DocumentServiceProxy()
 
 # use elsewhere by:
-# from lpm_kernel.file_data.service import document_service
+# from lpm_kernel.file_data.document_service import document_service

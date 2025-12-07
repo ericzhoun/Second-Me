@@ -39,11 +39,11 @@ def main():
         return False
     logger.info("✓ Biography generation completed")
      """
-    logger.info("Step 2: Mapping entity network...")
+    """ logger.info("Step 2: Mapping entity network...")
     if not service.map_your_entity_network():
         logger.error("Entity network mapping failed!")
         return False
-    logger.info("✓ Entity network mapping completed")
+    logger.info("✓ Entity network mapping completed") """
     
     # Stage 3: Prepare Training Data
     logger.info("=" * 60)
