@@ -9,7 +9,8 @@ import traceback
 from openai import OpenAI
 import tiktoken
 
-from lpm_kernel.api.services.user_llm_config_service import UserLLMConfigService
+from lpm_kernel.common.gemini_client import GeminiClient
+
 from lpm_kernel.configs.config import Config
 from lpm_kernel.L0.models import InsighterInput, SummarizerInput
 from lpm_kernel.L0.prompt import *
@@ -55,16 +56,24 @@ class L0Generator:
         self.max_retries_summarize = 2
         self.timeout_summarize = 30
 
+        from lpm_kernel.api.services.user_llm_config_service import UserLLMConfigService
         self.user_llm_config_service = UserLLMConfigService()
         self.user_llm_config = self.user_llm_config_service.get_available_llm()
         if self.user_llm_config is None:
             self.client = None
             self.model_name = None
         else:
-            self.client = OpenAI(
-                api_key=self.user_llm_config.chat_api_key,
-                base_url=self.user_llm_config.chat_endpoint,
-            )
+            if self.user_llm_config.provider_type == 'gemini':
+                logger.info("Initializing Gemini client for L0 generation")
+                self.client = GeminiClient(
+                    api_key=self.user_llm_config.chat_api_key,
+                    base_url=self.user_llm_config.chat_endpoint
+                )
+            else:
+                self.client = OpenAI(
+                    api_key=self.user_llm_config.chat_api_key,
+                    base_url=self.user_llm_config.chat_endpoint,
+                )
             self.model_name = self.user_llm_config.chat_model_name
         
 
@@ -158,7 +167,12 @@ class L0Generator:
                 timeout=request_timeout,
                 response_format={"type": "json_object"},
             )
-            results.append(response.choices[0].message.content)
+            content = response.choices[0].message.content
+            try:
+                results.append(json.loads(content))
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse JSON response in image insighter: {content}")
+                results.append({})
 
         try:
             images_intent_list = []
@@ -288,7 +302,12 @@ class L0Generator:
                     timeout=request_timeout,
                     response_format={"type": "json_object"},
                 )
-                results.append(response.choices[0].message.content)
+                content = response.choices[0].message.content
+                try:
+                    results.append(json.loads(content))
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to parse JSON response in audio insighter (segment): {content}")
+                    results.append({})
 
             try:
                 title = results[0].get("Title", "")
@@ -346,7 +365,12 @@ class L0Generator:
                 timeout=request_timeout,
                 response_format={"type": "json_object"},
             )
-            api_res_dict = response.choices[0].message.content
+            content = response.choices[0].message.content
+            try:
+                api_res_dict = json.loads(content)
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse JSON response in audio insighter: {content}")
+                api_res_dict = {}
 
             try:
                 title = api_res_dict.get("Title", "")
@@ -437,10 +461,16 @@ class L0Generator:
 
             if self.model_name is None:
                 self.user_llm_config = self.user_llm_config_service.get_available_llm()
-                self.client = OpenAI(
-                    api_key=self.user_llm_config.chat_api_key,
-                    base_url=self.user_llm_config.chat_endpoint,
-                )
+                if self.user_llm_config.provider_type == 'gemini':
+                    self.client = GeminiClient(
+                        api_key=self.user_llm_config.chat_api_key,
+                        base_url=self.user_llm_config.chat_endpoint
+                    )
+                else:
+                    self.client = OpenAI(
+                        api_key=self.user_llm_config.chat_api_key,
+                        base_url=self.user_llm_config.chat_endpoint,
+                    )
                 self.model_name = self.user_llm_config.chat_model_name
 
             spliter = TokenTextSplitter(
@@ -450,7 +480,11 @@ class L0Generator:
             )
 
             tmp = file_content.get("content", "")
-            doc_content = "\n".join(tmp)
+            if isinstance(tmp, list):
+                doc_content = "\n".join(tmp)
+            else:
+                # Ensure it's a string
+                doc_content = str(tmp)
             splits = spliter.split_text(doc_content)
             use_content = chunk_filter(
                 splits, filter, filtered_chunks_n=chunk_num, separator="\n", spacer="\n"
@@ -489,7 +523,12 @@ class L0Generator:
                 timeout=request_timeout,
                 response_format={"type": "json_object"},
             )
-            results.append(json.loads(response.choices[0].message.content))
+            content = response.choices[0].message.content
+            try:
+                results.append(json.loads(content))
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse JSON response: {content}")
+                results.append({})
         try:
             title = results[0].get("Title")
             overview = results[0].get("Overview")
@@ -765,10 +804,16 @@ class L0Generator:
             )
             if self.model_name is None:
                 self.user_llm_config = self.user_llm_config_service.get_available_llm()
-                self.client = OpenAI(
-                    api_key=self.user_llm_config.chat_api_key,
-                    base_url=self.user_llm_config.chat_endpoint,
-                )
+                if self.user_llm_config.provider_type == 'gemini':
+                    self.client = GeminiClient(
+                        api_key=self.user_llm_config.chat_api_key,
+                        base_url=self.user_llm_config.chat_endpoint
+                    )
+                else:
+                    self.client = OpenAI(
+                        api_key=self.user_llm_config.chat_api_key,
+                        base_url=self.user_llm_config.chat_endpoint,
+                    )
                 self.model_name = self.user_llm_config.chat_model_name
 
             requests.append(

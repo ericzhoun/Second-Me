@@ -30,7 +30,6 @@ from lpm_kernel.L2.data_pipeline.data_prep.diversity.diversity_data_generator im
 from lpm_kernel.L2.data_pipeline.data_prep.preference.preference_QA_generate import PreferenceQAGenerator
 from lpm_kernel.L2.data_pipeline.data_prep.selfqa.selfqa_generator import SelfQA
 from lpm_kernel.L2.note_templates import OBJECTIVE_TEMPLATES, SUBJECTIVE_TEMPLATES
-from lpm_kernel.L2.utils import format_timestr
 from lpm_kernel.api.services.user_llm_config_service import UserLLMConfigService
 
 from lpm_kernel.configs.logging import get_train_process_logger
@@ -366,8 +365,7 @@ class L2DataProcessor:
 
         for note in note_list:
             if note.memory_type not in OBJECT_NOTE_TYPE:
-                note.create_time = format_timestr(note.create_time)
-
+                # note.create_time is already a formatted string, no additional formatting needed
                 basic_template = random.choice(selected_templates["basic"]).format(user_name=user_info["username"])
 
                 if note.insight:
@@ -500,294 +498,93 @@ class L2DataProcessor:
             os.getcwd(), "lpm_kernel/L2/data_pipeline/graphrag_indexing/.env"
         )
 
-        user_llm_config_service = UserLLMConfigService()
-        user_llm_config = user_llm_config_service.get_available_llm()
-
-        chat_api_key = user_llm_config.chat_api_key
-        chat_base_url = user_llm_config.chat_endpoint
-        chat_model_name = user_llm_config.chat_model_name
-
-        embedding_api_key = user_llm_config.embedding_api_key
-        embedding_base_url = user_llm_config.embedding_endpoint
-        embedding_model_name = user_llm_config.embedding_model_name
-
-        with open(GRAPH_CONFIG, "r", encoding="utf-8") as file:
-            settings = yaml.safe_load(file)
-
-        with open(ENV_CONFIG, "w", encoding="utf-8") as file:
-            file.write(f"GRAPHRAG_API_KEY={chat_api_key}")
-
-        settings["input"]["base_dir"] = graph_input_dir
-        settings["output"]["base_dir"] = output_dir
-        settings["reporting"]["base_dir"] = os.path.join(output_dir, "../report")
-
-        settings["models"]["default_chat_model"]["api_base"] = chat_base_url
-        settings["models"]["default_chat_model"]["model"] = chat_model_name
-        settings["models"]["default_chat_model"]["api_key"] = chat_api_key
-
-        if chat_model_name.startswith("openai"):
-            settings["models"]["default_chat_model"]["model"] = chat_model_name.replace("openai/", "")
-
-        if embedding_model_name.startswith("openai"):
-            settings["models"]["default_embedding_model"]["model"] = embedding_model_name.replace("openai/", "")
-        else:
-            settings["models"]["default_embedding_model"]["model"] = embedding_model_name
-
-        settings["models"]["default_embedding_model"]["api_base"] = embedding_base_url
-        settings["models"]["default_embedding_model"]["api_key"] = embedding_api_key
-
+        PROMPT_CONFIG = os.path.join(
+            os.getcwd(), "lpm_kernel/L2/data_pipeline/graphrag_indexing/prompts/prompts.yaml"
+        )
+        
+        # Ensure the output directory exists
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
-            logger.warning(f"Specified output directory does not exist, created: {output_dir}.")
 
-        with open(GRAPH_CONFIG, "w", encoding="utf-8") as file:
-            yaml.dump(settings, file, default_flow_style=False, allow_unicode=True)
-
-        logger.info(f"Input base_dir has been updated to {graph_input_dir} and saved.")
-        logger.info(f"Output base_dir has been updated to {output_dir} and saved.")
-        logger.info(
-            f"Report base_dir has been updated to {os.path.join(output_dir, 'report')} and saved."
-        )
-
-        # Read prompts configuration and modify entity_extraction/summarize_descriptions from "in Chinese" to "in {lang}"
-        entity_extraction_path = os.path.join(
-            os.getcwd(),
-            "lpm_kernel/L2/data_pipeline/graphrag_indexing/prompts/extract_graph.txt",
-        )
-        with open(entity_extraction_path, "r", encoding="utf-8") as f1:
-            entity_extraction = f1.read()
-            entity_extraction = entity_extraction.replace("<lang>", lang)
-        with open(entity_extraction_path, "w", encoding="utf-8") as f2:
-            f2.write(entity_extraction)
-
-        summarize_descriptions_path = os.path.join(
-            os.getcwd(),
-            "lpm_kernel/L2/data_pipeline/graphrag_indexing/prompts/summarize_descriptions.txt",
-        )
-        with open(summarize_descriptions_path, "r", encoding="utf-8") as f1:
-            summarize_descriptions = f1.read()
-            summarize_descriptions = summarize_descriptions.replace("<lang>", lang)
-        with open(summarize_descriptions_path, "w", encoding="utf-8") as f2:
-            f2.write(summarize_descriptions)
-
-        # Run GraphRAG indexing (use poetry run for cross-platform compatibility)
-        try:
-            result = subprocess.run(
-                [
-                    "poetry",
-                    "run",
-                    "graphrag",
-                    "index",
-                    "--config",
-                    os.path.join(
-                        os.getcwd(),
-                        "lpm_kernel/L2/data_pipeline/graphrag_indexing/settings.yaml",
-                    ),
-                    "--root",
-                    os.path.join(
-                        os.getcwd(),
-                        "lpm_kernel/L2/data_pipeline/graphrag_indexing",
-                    ),
-                    "--method",
-                    "standard",
-                    "--logger",
-                    "none",
-                ],
-                check=True,
-                text=True,
-                capture_output=True,
-            )
-            if result.stderr:
-                logger.error(f"subprocess.run graphrag index error: {result.stderr}")
-                raise RuntimeError("subprocess.run graphrag index error")
-        except Exception as e:
-            raise
+        # Define the graphrag command
+        config_path = os.path.join(os.getcwd(), "lpm_kernel/L2/data_pipeline/graphrag_indexing/settings.yaml")
+        root_path = os.path.join(os.getcwd(), "lpm_kernel/L2/data_pipeline/graphrag_indexing")
         
-        """Post-processing"""
+        command = [
+            "poetry", "run", "graphrag", "index",
+            "--config", config_path,
+            "--root", root_path,
+            "--method", "standard",
+            "--logger", "none"
+        ]
 
-        self.creat_mapping(
-            output_dir,
-            note_list,
-            os.path.join(
-                os.getcwd(),
-                "resources/L2/data_pipeline/raw_data/id_entity_mapping_subjective_v2.json",
-            ),
-        )
+        logger.info(f"Running graphrag command: {' '.join(command)}")
 
-    def creat_mapping(self, graph_dir, note_list, mapped_json_file):
-        """Create a mapping between entities and documents.
+        try:
+            # Execute the command
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=True,
+                encoding='utf-8'
+            )
+            logger.info("GraphRAG indexing completed successfully.")
+            logger.info(f"stdout: {result.stdout}")
+
+        except FileNotFoundError:
+            logger.error(
+                "Error: 'poetry' command not found. "
+                "Please ensure that Poetry is installed and in your system's PATH."
+            )
+        except subprocess.CalledProcessError as e:
+            logger.error("GraphRAG indexing failed.")
+            logger.error(f"Return code: {e.returncode}")
+            logger.error(f"stdout: {e.stdout}")
+            logger.error(f"stderr: {e.stderr}")
+        except Exception as e:
+            logger.error(f"An unexpected error occurred: {str(e)}")
+            logger.error(traceback.format_exc())
+
+    def convert_csv_to_json(
+            self,
+            csv_path: str,
+            json_path: str,
+            encoding: str = "utf-8",
+            delimiter: str = ",",
+            sort_keys: bool = False,
+    ):
+        """Convert a CSV file to JSON format.
+        
+        This method reads a CSV file, optionally sorts the data by specified keys,
+        and writes the data to a JSON file.
         
         Args:
-            graph_dir: Directory containing GraphRAG output.
-            note_list: List of Note objects.
-            mapped_json_file: Path to save the mapping file.
+            csv_path: Path to the input CSV file.
+            json_path: Path to the output JSON file.
+            encoding: Encoding of the input CSV file. Defaults to "utf-8".
+            delimiter: Delimiter used in the CSV file. Defaults to ",".
+            sort_keys: Whether to sort the JSON data by keys. Defaults to False.
         """
         try:
-            document = pd.read_parquet(
-                os.path.join(graph_dir, "documents.parquet")
-            )
-            entities = pd.read_parquet(
-                os.path.join(graph_dir, "entities.parquet")
-            )
+            # Read the CSV file
+            df = pd.read_csv(csv_path, encoding=encoding, delimiter=delimiter)
         except Exception as e:
+            logger.error(f"Error reading CSV file {csv_path}: {str(e)}")
             return
 
-        json_data = []
+        try:
+            # Convert the DataFrame to a list of dictionaries
+            data = df.to_dict(orient="records")
 
-        # show the column names
-        logger.info(f"Entity Column names: {entities.columns}")
+            # Sort the data by keys if required
+            if sort_keys:
+                data = sorted(data, key=lambda x: list(x.keys()))
 
-        logger.info(f"Document Column names: {document.columns}")
+            # Write the data to a JSON file
+            with open(json_path, "w", encoding="utf-8") as json_file:
+                json.dump(data, json_file, ensure_ascii=False, indent=4)
 
-        for e_i, e_r in tqdm(entities.iterrows(), total=len(entities)):
-            json_item = {}
-            json_item["entity_id"] = e_r["id"]
-            json_item["entity_name"] = e_r["title"]
-            json_item["entity_description"] = e_r["description"]
-            json_item["doc_id"] = []
-            text_unit_ids = e_r["text_unit_ids"]
-
-            for text_unit_id in text_unit_ids:
-                for d_i, d_r in document.iterrows():
-                    if text_unit_id in d_r["text_unit_ids"]:
-                        if "note" in d_r["title"]:
-                            json_item["doc_id"].append(
-                                note_list[
-                                    int(
-                                        d_r["title"]
-                                        .replace(".txt", "")
-                                        .replace("note_", "")
-                                    )
-                                ].id
-                            )
-            json_data.append(json_item)
-
-        with open(os.path.join(mapped_json_file), "w", encoding="utf-8") as file:
-            json.dump(json_data, file, ensure_ascii=False, indent=4)
-
-    def _gen_preference_data(self, topics_path, preference_output_path, bio):
-        """Generate preference data based on user topics and bio.
-        
-        Args:
-            topics_path: Path to topics data file.
-            preference_output_path: Path to save preference data.
-            bio: User's bio information.
-        """
-        processor = PreferenceQAGenerator(
-            filename=topics_path, bio=bio, preference_language=self.preferred_lang
-        )
-        processor.process_clusters(preference_output_path)
-
-    def _gen_diversity_data(
-            self,
-            entitys_path,
-            note_list: List[Note],
-            graph_path,
-            output_path,
-            user_name,
-            global_bio,
-            config_path,
-    ):
-        """Generate diversity data based on entities and notes.
-        
-        Args:
-            entitys_path: Path to entities data.
-            note_list: List of Note objects.
-            graph_path: Path to graph data.
-            output_path: Path to save diversity data.
-            user_name: Name of the user.
-            global_bio: User's global biography.
-            config_path: Path to configuration file.
-        """
-        processor = DiversityDataGenerator(self.preferred_lang)
-        processor.generate_data(
-            entitys_path, note_list, config_path, graph_path, user_name, global_bio, output_path
-        )
-
-    def _gen_selfqa_data(self, output_path, user_name, user_intro, bio):
-        """Generate self Q&A data based on user information.
-        
-        Args:
-            output_path: Path to save self Q&A data.
-            user_name: Name of the user.
-            user_intro: User's introduction.
-            bio: User's bio information.
-        """
-        selfqa = SelfQA(
-            user_name=user_name,
-            user_input_introduction=user_intro,
-            user_global_bio=bio,
-            preferred_language=self.preferred_lang,
-        )
-        q_a_list = selfqa.generate_qa()
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(q_a_list, f, ensure_ascii=False, indent=4)
-
-    def _gen_context_data(
-            self,
-            note_list: List[Note],
-            entitys_path: str,
-            data_output_base_dir: str,
-            user_name: str,
-            user_intro: str,
-            global_bio: str
-    ):
-        """Generate context-based conversation data.
-        
-        This method generates contextual conversation data in multiple steps:
-        1. Generate initial context needs
-        2. Enhance context data
-        3. Generate expert responses
-        4. Generate critic data
-        
-        Args:
-            note_list: List of Note objects.
-            entitys_path: Path to entities data.
-            data_output_base_dir: Base directory for output data.
-            user_name: Name of the user.
-            user_intro: User's introduction.
-            global_bio: User's global biography.
-        """
-        context_generator = ContextGenerator(
-            preferred_language=self.preferred_lang,
-            user_name=user_name,
-            user_bio=global_bio
-        )
-
-        # 1. Generate initial context needs
-        context_generator.generate_context_needs(
-            note_list=note_list,
-            entity_map_path=os.path.join(entitys_path),
-            data_output_base_dir=data_output_base_dir,
-            needs_file_name="context_needs.json"
-        )
-        logger.info("---" * 30 + "\nContext needs generated\n" + "---" * 30)
-        logger.info(data_output_base_dir + "/context_needs.json")
-
-        # 2. Generate context enhanced data
-        context_generator.generate_context_enhance_data(
-            data_output_base_dir=data_output_base_dir,
-            needs_file_name="context_needs.json",
-            context_enhanced_res_file_name="context_enhanced.json",
-            note_list=note_list
-        )
-        logger.info("---" * 30 + "\nContext enhanced generated\n" + "---" * 30)
-        logger.info(data_output_base_dir + "/context_enhanced.json")
-
-        # 3. Generate expert responses
-        context_generator.expert_response_generator(
-            data_output_base_dir=data_output_base_dir,
-            context_enhanced_res_file_name="context_enhanced.json",
-            output_file_name="expert_responses.json"
-        )
-        logger.info("---" * 30 + "\nExpert responses generated\n" + "---" * 30)
-        logger.info(data_output_base_dir + "/expert_responses.json")
-
-        # 4. Generate expert responses and critic data
-        context_generator.gen_context_critic_data(
-            data_output_base_dir=data_output_base_dir,
-            expert_response_file_name="expert_responses.json",
-            out_file_name="context_final.jsonl"
-        )
-        logger.info("---" * 30 + "\nContext critic generated\n" + "---" * 30)
-        logger.info(data_output_base_dir + "/context_final.jsonl")
+            logger.info(f"Successfully converted {csv_path} to {json_path}")
+        except Exception as e:
+            logger.error(f"Error writing JSON file {json_path}: {str(e)}")

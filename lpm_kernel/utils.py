@@ -165,7 +165,7 @@ class TokenTextSplitter(TextSplitter):
 
     def _cut_meaningless_head_tail(self, text: str) -> str:
         # Only split when there are multiple newlines, as parsing of PDF/Word often contains false newlines
-        sentences = re.split("\. |! |\? |。|！|？|\n+ *\n+", text)
+        sentences = re.split(r"\. |! |\? |。|！|？|\n+ *\n+", text)
         if len(sentences) < 2:
             return text
         head = sentences[0]

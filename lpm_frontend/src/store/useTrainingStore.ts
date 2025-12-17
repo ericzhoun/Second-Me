@@ -151,7 +151,7 @@ export const useTrainingStore = create<ModelState>((set, get) => ({
 
     try {
       const res = await getTrainProgress({
-        model_name: config.model_name || 'Qwen2.5-0.5B-Instruct'
+        model_name: config.model_name || 'Qwen2.5-7B-Instruct'
       });
 
       if (res.data.code === 0) {

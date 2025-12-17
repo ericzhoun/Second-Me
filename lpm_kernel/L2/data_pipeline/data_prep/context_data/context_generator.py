@@ -12,6 +12,7 @@ import traceback
 from openai import OpenAI
 from tqdm import tqdm
 
+from lpm_kernel.common.gemini_client import GeminiClient
 from lpm_kernel.L1.bio import Note
 from lpm_kernel.L2.data_pipeline.data_prep.context_data.context_config import enc, needs_dict, min_needs_count, max_needs_count
 from lpm_kernel.L2.data_pipeline.data_prep.context_data.prompt import (
@@ -71,10 +72,17 @@ class ContextGenerator:
         else:
             self.model_name = user_llm_config.chat_model_name
     
-            self.client = OpenAI(
-                api_key=user_llm_config.api_key,
-                base_url=user_llm_config.endpoint,
-            )
+            if user_llm_config.provider_type == 'gemini':
+                logging.info("Initializing Gemini client for ContextGenerator")
+                self.client = GeminiClient(
+                    api_key=user_llm_config.chat_api_key,
+                    base_url=user_llm_config.chat_endpoint
+                )
+            else:
+                self.client = OpenAI(
+                    api_key=user_llm_config.chat_api_key,
+                    base_url=user_llm_config.chat_endpoint,
+                )
         self.preferred_language = preferred_language
         self.critic_checkpoint_path = "./critic_task_checkpoint.json"
         

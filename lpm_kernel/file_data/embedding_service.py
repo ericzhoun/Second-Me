@@ -45,8 +45,17 @@ class EmbeddingService:
         for collection_name in collections_to_init:
             try:
                 collection = self.client.get_collection(name=collection_name)
-                if collection.metadata.get("dimension") != self.dimension:
-                    logger.warning(f"Dimension mismatch in '{collection_name}' collection: {collection.metadata.get('dimension')} vs {self.dimension}")
+                stored_dimension = collection.metadata.get("dimension")
+                # Trigger mismatch if:
+                # 1. Stored dimension differs from expected dimension
+                # 2. Stored dimension is None/not set (unknown dimension - safer to reinitialize)
+                # 3. Collection has data but dimension metadata is missing
+                if stored_dimension != self.dimension:
+                    logger.warning(f"Dimension mismatch in '{collection_name}' collection: stored={stored_dimension} vs expected={self.dimension}")
+                    dimension_mismatch_detected = True
+                # Also check if collection has data - if so, we may have real dimension mismatch
+                if stored_dimension is None and collection.count() > 0:
+                    logger.warning(f"Collection '{collection_name}' has data but no dimension metadata - will reinitialize")
                     dimension_mismatch_detected = True
             except (ValueError, chromadb.errors.NotFoundError):
                 # Collection doesn't exist yet, will be created later
@@ -140,7 +149,8 @@ class EmbeddingService:
                 result = self.document_collection.get(
                     ids=[str(document.id)], include=["embeddings"]
                 )
-                if not result or result["embeddings"] is None or len(result["embeddings"]) == 0:
+                embeddings = result.get("embeddings") if result else None
+                if embeddings is None or (hasattr(embeddings, '__len__') and len(embeddings) == 0):
                     logger.error(
                         f"Failed to verify embedding storage for document {document.id}"
                     )
@@ -213,7 +223,17 @@ class EmbeddingService:
                     result = self.chunk_collection.get(
                         ids=[str(chunk.id)], include=["embeddings"]
                     )
-                    if result and result["embeddings"] is not None and len(result["embeddings"]) > 0:
+                    # Safely check result - it's a dict but avoid truthiness checks on potential numpy arrays
+                    embeddings = None
+                    if result is not None and isinstance(result, dict):
+                        embeddings = result.get("embeddings")
+                    
+                    has_valid_embeddings = (
+                        embeddings is not None and 
+                        hasattr(embeddings, '__len__') and 
+                        len(embeddings) > 0
+                    )
+                    if has_valid_embeddings:
                         chunk.has_embedding = True
                         logger.info(f"Verified embedding for chunk {chunk.id}")
                     else:
@@ -256,11 +276,16 @@ class EmbeddingService:
                 ids=[str(chunk_id)], include=["embeddings"]
             )
 
-            if not result or result["embeddings"] is None or len(result["embeddings"]) == 0:
+            # Safely check result without numpy array truthiness issues
+            embeddings = None
+            if result is not None and isinstance(result, dict):
+                embeddings = result.get("embeddings")
+            
+            if embeddings is None or not hasattr(embeddings, '__len__') or len(embeddings) == 0:
                 logger.warning(f"No embedding found for chunk {chunk_id}")
                 return None
 
-            return result["embeddings"][0]
+            return embeddings[0]
 
         except Exception as e:
             logger.error(f"Error getting embedding for chunk {chunk_id}: {str(e)}")
@@ -290,11 +315,16 @@ class EmbeddingService:
                 ids=[str(document_id)], include=["embeddings"]
             )
 
-            if not result or result["embeddings"] is None or len(result["embeddings"]) == 0:
+            # Safely check result without numpy array truthiness issues
+            embeddings = None
+            if result is not None and isinstance(result, dict):
+                embeddings = result.get("embeddings")
+            
+            if embeddings is None or not hasattr(embeddings, '__len__') or len(embeddings) == 0:
                 logger.warning(f"No embedding found for document {document_id}")
                 return None
 
-            return result["embeddings"][0]
+            return embeddings[0]
 
         except Exception as e:
             logger.error(

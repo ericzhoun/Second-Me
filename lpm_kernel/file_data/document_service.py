@@ -439,9 +439,16 @@ class DocumentService:
                     ids=chunk_ids, include=["embeddings", "documents"]
                 )
 
-                # transfer chunk_id -> embedding
-                for i, chunk_id in enumerate(results["ids"]):
-                    embeddings[int(chunk_id)] = results["embeddings"][i]
+                # Safely access results without numpy array truthiness issues
+                if results is not None and isinstance(results, dict):
+                    result_ids = results.get("ids", [])
+                    result_embeddings = results.get("embeddings", [])
+                    
+                    # transfer chunk_id -> embedding
+                    if result_ids is not None and result_embeddings is not None:
+                        for i, chunk_id in enumerate(result_ids):
+                            if i < len(result_embeddings):
+                                embeddings[int(chunk_id)] = result_embeddings[i]
 
             return embeddings
 
@@ -509,8 +516,13 @@ class DocumentService:
                 ids=[str(document_id)], include=["embeddings"]
             )
 
-            if results and results["embeddings"] is not None and len(results["embeddings"]) > 0:
-                return results["embeddings"][0]
+            # Safely check results without numpy array truthiness issues
+            embeddings = None
+            if results is not None and isinstance(results, dict):
+                embeddings = results.get("embeddings")
+            
+            if embeddings is not None and hasattr(embeddings, '__len__') and len(embeddings) > 0:
+                return embeddings[0]
             return None
 
         except Exception as e:
@@ -738,9 +750,107 @@ class DocumentService:
             logger.error(f"Error verifying document embeddings: {str(e)}", exc_info=True)
             raise
 
+    def sync_chunk_embeddings_from_chromadb(self) -> Dict[str, int]:
+        """Sync chunk has_embedding status from ChromaDB to database
+        
+        This method queries ChromaDB to check which chunks actually have embeddings
+        and updates the database has_embedding field accordingly. This fixes desync
+        issues where chunks have embeddings in ChromaDB but the database shows False.
+        
+        Returns:
+            Dict[str, int]: Statistics about the sync operation:
+                - total_chunks: Total number of chunks processed
+                - synced_to_true: Chunks updated from False to True
+                - synced_to_false: Chunks updated from True to False
+                - already_correct: Chunks that were already correct
+                - errors: Number of errors encountered
+        """
+        try:
+            logger.info("Starting chunk embedding sync from ChromaDB to database...")
+            
+            stats = {
+                "total_chunks": 0,
+                "synced_to_true": 0,
+                "synced_to_false": 0,
+                "already_correct": 0,
+                "errors": 0
+            }
+            
+            # Get all documents
+            documents = self._repository.list()
+            
+            for doc in documents:
+                # Get all chunks for this document
+                chunks = self._repository.find_chunks(doc.id)
+                
+                for chunk in chunks:
+                    stats["total_chunks"] += 1
+                    
+                    try:
+                        # Check if embedding exists in ChromaDB
+                        result = self.embedding_service.chunk_collection.get(
+                            ids=[str(chunk.id)], 
+                            include=["embeddings"]
+                        )
+                        
+                        # Safely check if embeddings exist
+                        embeddings = None
+                        if result is not None and isinstance(result, dict):
+                            embeddings = result.get("embeddings")
+                        
+                        has_embedding_in_chromadb = (
+                            embeddings is not None and 
+                            hasattr(embeddings, '__len__') and 
+                            len(embeddings) > 0
+                        )
+                        
+                        # Compare with database status
+                        if chunk.has_embedding != has_embedding_in_chromadb:
+                            # Update database to match ChromaDB
+                            self._repository.update_chunk_embedding_status(
+                                chunk.id, 
+                                has_embedding_in_chromadb
+                            )
+                            
+                            if has_embedding_in_chromadb:
+                                stats["synced_to_true"] += 1
+                                logger.info(f"Synced chunk {chunk.id}: DB False -> ChromaDB True")
+                            else:
+                                stats["synced_to_false"] += 1
+                                logger.warning(f"Synced chunk {chunk.id}: DB True -> ChromaDB False")
+                        else:
+                            stats["already_correct"] += 1
+                            
+                    except Exception as e:
+                        stats["errors"] += 1
+                        logger.error(f"Error syncing chunk {chunk.id}: {str(e)}")
+                        continue
+            
+            logger.info(f"Chunk embedding sync completed: {stats}")
+            return stats
+            
+        except Exception as e:
+            logger.error(f"Error in sync_chunk_embeddings_from_chromadb: {str(e)}", exc_info=True)
+            raise
 
-# create service
-document_service = DocumentService()
+
+# Lazy initialization to avoid circular imports
+_document_service_instance = None
+
+def get_document_service():
+    """Get the document service singleton (lazy initialization)"""
+    global _document_service_instance
+    if _document_service_instance is None:
+        _document_service_instance = DocumentService()
+    return _document_service_instance
+
+# For backward compatibility - this is a lazy proxy
+class _DocumentServiceProxy:
+    """Lazy proxy for document_service to maintain backward compatibility"""
+    def __getattr__(self, name):
+        return getattr(get_document_service(), name)
+
+document_service = _DocumentServiceProxy()
 
 # use elsewhere by:
-# from lpm_kernel.file_data.service import document_service
+# from lpm_kernel.file_data.document_service import document_service

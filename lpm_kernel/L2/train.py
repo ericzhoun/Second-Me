@@ -21,15 +21,97 @@ from peft import LoraConfig
 from tqdm import tqdm
 from transformers import HfArgumentParser, TrainingArguments, set_seed
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from trl import SFTTrainer, SFTConfig, DataCollatorForCompletionOnlyLM
+from trl import SFTTrainer, SFTConfig
+try:
+    from trl import DataCollatorForCompletionOnlyLM
+except ImportError:
+    # Fallback for older versions of TRL
+    from transformers import DataCollatorForLanguageModeling as DataCollatorForCompletionOnlyLM
 
 # Local imports
 from lpm_kernel.L2.utils import (
     create_and_prepare_model,
     formatting_prompts_func,
-    create_chat_data,
+    create_and_prepare_model,
+    formatting_prompts_func,
     release_ollama_models_early,
 )
+from datasets import load_dataset, Dataset
+from lpm_kernel.L2.training_prompt import (
+    CONTEXT_PROMPT,
+    CONTEXT_COT_PROMPT,
+    JUDGE_PROMPT,
+    JUDGE_COT_PROMPT,
+    MEMORY_PROMPT,
+    MEMORY_COT_PROMPT,
+)
+
+def create_chat_data(data_args, tokenizer):
+    """Creates and preprocesses chat data for training (Local Debug Version)."""
+    def preprocess(sample, user_name='user', is_cot=False):
+        if sample.get('assistant') is None and sample.get('enhanced_request') is not None:
+            user_message = f"{user_name}'s request is: " + sample['user_request']
+            messages = [
+                {"role": "system", "content": CONTEXT_COT_PROMPT.format(user_name=user_name) if is_cot else CONTEXT_PROMPT.format(user_name=user_name)},
+                {"role": "user", "content": user_message},
+                {"role": "assistant", "content": sample['enhanced_request'].strip('\n')},
+            ]
+            return [{"input_ids": tokenizer.apply_chat_template(messages, tokenize=True)}]
+        if sample.get('assistant') is None and sample.get('user_feedback') is not None:
+            user_message = f"{user_name}'s request is: " + sample['user_request'] + "\n" + "Expert's response is: " + sample['expert_response']
+            messages = [
+                {"role": "system", "content": JUDGE_COT_PROMPT.format(user_name=user_name) if is_cot else JUDGE_PROMPT.format(user_name=user_name)},
+                {"role": "user", "content": user_message},
+                {"role": "assistant", "content": sample['user_feedback'].strip('\n')},
+            ]
+            return [{"input_ids": tokenizer.apply_chat_template(messages, tokenize=True)}]
+        
+        if sample.get('assistant') is None:
+            return []
+        sample['assistant'] = sample['assistant'].strip('\n')
+        
+        # Check for 'None' string in assistant content
+        if 'None' in sample['assistant']:
+            return []
+            
+        messages = [
+            {"role": "system", "content": MEMORY_COT_PROMPT.format(user_name=user_name) if is_cot else MEMORY_PROMPT.format(user_name=user_name)},
+            {"role": "user", "content": sample['user']},
+            {"role": "assistant", "content": sample['assistant']},
+        ]
+        return [{"input_ids": tokenizer.apply_chat_template(messages, tokenize=True)}]
+    
+    # Debugging Output
+    print(f"DEBUG_LOCAL: Loading dataset from {data_args.dataset_name}")
+    try:
+        dataset = load_dataset("json", data_files=data_args.dataset_name, split="train")
+        print(f"DEBUG_LOCAL: load_dataset returned {len(dataset)} items")
+    except Exception as e:
+        print(f"DEBUG_LOCAL: Error loading dataset: {e}")
+        return None
+
+    res_dataset = []
+    filtered_count = 0
+    success_count = 0
+    
+    for i, case in enumerate(dataset):
+        processed = preprocess(case, data_args.user_name, data_args.is_cot)
+        if processed:
+            res_dataset.extend(processed)
+            success_count += 1
+        else:
+            filtered_count += 1
+            if i < 5:
+                print(f"DEBUG_LOCAL: Filtered item {i}. Keys: {list(case.keys())}")
+                if case.get('assistant'):
+                     print(f"DEBUG_LOCAL: Assistant content start: {case['assistant'][:50]}")
+    
+    print(f"DEBUG_LOCAL: Validation Complete. Success: {success_count}, Filtered: {filtered_count}")
+    
+    res = Dataset.from_list(res_dataset)
+    print(f"**************Dataset contains {res.num_rows} elements.**************")
+
+    return res
 from lpm_kernel.configs.logging import LOGGING_CONFIG
 import logging.config
 from lpm_kernel.configs.logging import get_train_process_logger
@@ -252,16 +334,18 @@ def main(model_args, data_args, training_args):
             bnb_4bit_use_double_quant=model_args.use_nested_quant,
             bnb_4bit_quant_storage=quant_storage_dtype,
         )
-        # For 4-bit models, we can use device_map="auto"
-        model_kwargs["device_map"] = "auto"
+        # For 4-bit models, use device_map="auto" only if CUDA is enabled
+        if torch.cuda.is_available() and model_args.use_cuda:
+            model_kwargs["device_map"] = "auto"
         logger.info("Using 4-bit quantization for memory efficiency")
     elif model_args.use_8bit_quantization:
         from transformers import BitsAndBytesConfig
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
             load_in_8bit=model_args.use_8bit_quantization
         )
-        # For 8-bit models, we can use device_map="auto"
-        model_kwargs["device_map"] = "auto"
+        # For 8-bit models, use device_map="auto" only if CUDA is enabled
+        if torch.cuda.is_available() and model_args.use_cuda:
+            model_kwargs["device_map"] = "auto"
         logger.info("Using 8-bit quantization for memory efficiency")
     
     # Flash attention for memory efficiency when supported
@@ -299,7 +383,15 @@ def main(model_args, data_args, training_args):
     
     response_template = "\n<|im_start|>assistant\n"
     
-    collator = DataCollatorForCompletionOnlyLM(response_template, tokenizer=tokenizer)
+    # Create data collator based on what's available
+    try:
+        # Try TRL's DataCollatorForCompletionOnlyLM first
+        from trl import DataCollatorForCompletionOnlyLM
+        collator = DataCollatorForCompletionOnlyLM(response_template, tokenizer=tokenizer)
+    except (ImportError, TypeError):
+        # Fallback to transformers' default data collator
+        from transformers import DataCollatorForLanguageModeling
+        collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
     
     training_args.dataset_kwargs = {
         "append_concat_token": data_args.append_concat_token,
@@ -345,15 +437,41 @@ def main(model_args, data_args, training_args):
         logger.warning(f"Could not configure meta tensor handling: {e}")
         logger.warning(traceback.format_exc())
 
-    trainer = SFTTrainer(
-        model=model,
-        tokenizer=tokenizer,
-        args=training_args,
-        train_dataset=train_dataset,
-        peft_config=peft_config,
-        formatting_func=formatting_prompts_func,
-        data_collator=collator,
-    )
+    print(f"DEBUG_LOCAL: Before SFTTrainer init - train_dataset length: {len(train_dataset)}")
+    try:
+        print(f"DEBUG_LOCAL: First item preview: {str(train_dataset[0])[:200]}")
+    except Exception as e:
+        print(f"DEBUG_LOCAL: Could not print first item: {e}")
+
+    try:
+        trainer = SFTTrainer(
+            model=model,
+            processing_class=tokenizer,  # Use processing_class instead of tokenizer for newer TRL versions
+            args=training_args,
+            train_dataset=train_dataset,
+            peft_config=peft_config,
+            data_collator=collator,
+        )
+        print(f"DEBUG_LOCAL: SFTTrainer initialized successfully")
+        print(f"DEBUG_LOCAL: Post-Init train_dataset length: {len(trainer.train_dataset)}")
+        print(f"DEBUG_LOCAL: Training Args - packing: {getattr(trainer.args, 'packing', 'Unknown')}")
+        print(f"DEBUG_LOCAL: Training Args - max_seq_length: {getattr(trainer.args, 'max_seq_length', 'Unknown')}")
+        
+        try:
+            item = trainer.train_dataset[0]
+            print(f"DEBUG_LOCAL: Post-Init first item keys: {list(item.keys())}")
+            if 'input_ids' in item:
+                print(f"DEBUG_LOCAL: Post-Init first item input_ids length: {len(item['input_ids'])}")
+            if 'attention_mask' in item:
+                print(f"DEBUG_LOCAL: Post-Init first item attention_mask length: {len(item['attention_mask'])}")
+        except Exception as e:
+            print(f"DEBUG_LOCAL: Error inspecting first item: {e}")
+            
+        print(f"DEBUG_LOCAL: Trainer args - max_steps: {trainer.args.max_steps}, num_train_epochs: {trainer.args.num_train_epochs}")
+    
+    except Exception as e:
+        print(f"DEBUG_LOCAL: Error initializing SFTTrainer: {e}")
+        raise
     
     # Print model details
     trainer.accelerator.print(f"{trainer.model}")

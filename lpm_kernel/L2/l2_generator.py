@@ -129,7 +129,16 @@ class L2Generator:
         processor = PreferenceQAGenerator(
             filename=topics_path, bio=global_bio, preference_language=self.preferred_lang, is_cot=self.is_cot
         )
-        processor.process_clusters(preference_output_path)
+        
+        # Check if batch processing is enabled
+        use_batch = os.environ.get("USE_BATCH_PROCESSING", "false").lower() == "true"
+        batch_size = int(os.environ.get("BATCH_SIZE", "10"))
+        
+        if use_batch:
+            logging.info(f"Using batch processing with batch_size={batch_size}")
+            processor.process_clusters_batch(preference_output_path, batch_size=batch_size)
+        else:
+            processor.process_clusters(preference_output_path)
     
     def gen_diversity_data(
         self, 
